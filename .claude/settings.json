@@ -1,0 +1,40 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(node -e ' *)",
+      "WebFetch(domain:www.researchgate.net)",
+      "WebFetch(domain:www.cmu.edu)",
+      "WebFetch(domain:sciendo.com)",
+      "Bash(curl -s -X POST http://127.0.0.1:8787/query -H 'Content-Type: application/json' -d '{\"sql\": \"SELECT table_schema, table_name, column_name, data_type, is_nullable FROM information_schema.columns WHERE table_schema NOT IN \\('\\\\''pg_catalog'\\\\'', '\\\\''information_schema'\\\\''\\) ORDER BY table_schema, table_name, ordinal_position\", \"database\": \"HPCData\"}')",
+      "Bash(curl -s -X POST http://127.0.0.1:8787/query -H 'Content-Type: application/json' -d '{\"sql\": \"SELECT COUNT\\(*\\) AS cnt FROM hpc.job_details\", \"database\": \"HPCData\"}')",
+      "Bash(curl -s -X POST http://127.0.0.1:8787/query -H 'Content-Type: application/json' -d '{\"sql\": \"SELECT COUNT\\(*\\) AS cnt FROM hpc.jobs\", \"database\": \"HPCData\"}')",
+      "Bash(curl -s -X POST http://127.0.0.1:8787/query -H 'Content-Type: application/json' -d '{\"sql\": \"SELECT COUNT\\(*\\) AS cnt FROM hpc.nodes\", \"database\": \"HPCData\"}')",
+      "Bash(curl -s -X POST http://127.0.0.1:8787/query -H 'Content-Type: application/json' -d '{\"sql\": \"SELECT DISTINCT job_state FROM hpc.job_details ORDER BY job_state\", \"database\": \"HPCData\"}')",
+      "Bash(curl -s -X POST http://127.0.0.1:8787/query -H 'Content-Type: application/json' -d '{\"sql\": \"SELECT DISTINCT cluster FROM hpc.job_details WHERE cluster IS NOT NULL ORDER BY cluster\", \"database\": \"HPCData\"}')",
+      "Bash(curl -s -X POST http://127.0.0.1:8787/query -H 'Content-Type: application/json' -d '{\"sql\": \"SELECT DISTINCT partition FROM hpc.job_details WHERE partition IS NOT NULL ORDER BY partition\", \"database\": \"HPCData\"}')",
+      "Bash(curl -s -X POST http://127.0.0.1:8787/query -H 'Content-Type: application/json' -d '{\"sql\": \"SELECT to_timestamp\\(MIN\\(submit_time\\)\\) AS min_submit, to_timestamp\\(MAX\\(end_time\\)\\) AS max_end FROM hpc.job_details WHERE submit_time IS NOT NULL AND end_time IS NOT NULL\", \"database\": \"HPCData\"}')",
+      "Bash(curl -s -X POST http://127.0.0.1:8787/query -H 'Content-Type: application/json' -d '{\"sql\": \"SELECT to_timestamp\\(MIN\\(time\\)\\) AS min_time, to_timestamp\\(MAX\\(time\\)\\) AS max_time FROM hpc.jobs WHERE time IS NOT NULL\", \"database\": \"HPCData\"}')",
+      "Bash(curl -s -X POST http://127.0.0.1:8787/query -H 'Content-Type: application/json' -d '{\"sql\": \"SELECT to_timestamp\\(MIN\\(time\\)\\) AS min_time, to_timestamp\\(MAX\\(time\\)\\) AS max_time FROM hpc.nodes WHERE time IS NOT NULL\", \"database\": \"HPCData\"}')",
+      "Bash(curl -s -X POST http://127.0.0.1:8787/query -H 'Content-Type: application/json' -d '{\"sql\": \"SELECT DISTINCT node FROM hpc.nodes ORDER BY node LIMIT 20\", \"database\": \"HPCData\"}')",
+      "Bash(curl -s -X POST http://127.0.0.1:8787/query -H 'Content-Type: application/json' -d '{\"sql\": \"SELECT jobs, cores, gpu_usage_labels, gpu_usage, temperature_labels, temperature, cpu_power_consumption_labels, cpu_power_consumption, dram_usage FROM hpc.nodes LIMIT 2\", \"database\": \"HPCData\"}')",
+      "Bash(curl -s -X POST http://127.0.0.1:8787/query -H 'Content-Type: application/json' -d '{\"sql\": \"SELECT DISTINCT user_name FROM hpc.job_details WHERE user_name IS NOT NULL ORDER BY user_name LIMIT 15\", \"database\": \"HPCData\"}')",
+      "Bash(curl -s -X POST http://127.0.0.1:8787/query -H 'Content-Type: application/json' -d '{\"sql\": \"SELECT data, power, cores, power_per_core, memory_per_core, memory_used FROM hpc.jobs LIMIT 2\", \"database\": \"HPCData\"}')",
+      "Bash(python -c ' *)",
+      "Bash(node -e \"const j=JSON.parse\\(require\\('fs'\\).readFileSync\\('e:/multi-agent/llm-data-explorer/chart_plugins/timearcs.json','utf8'\\)\\); new Function\\('return \\('+j.renderScript+'\\)'\\); console.log\\('OK len='+j.renderScript.length\\);\")",
+      "Bash(node -e \"const fs=require\\('fs'\\);const html=fs.readFileSync\\('e:/multi-agent/llm-data-explorer/data-explorer.html','utf8'\\);const m=html.match\\(/function renderGraph\\\\\\(wrap, spec\\\\\\)[\\\\s\\\\S]*?\\\\n\\\\}\\\\n/\\);if\\(!m\\){console.log\\('renderGraph not found'\\);process.exit\\(1\\);}try{new Function\\('echarts','CHART_COLORS','getThemeColors','window','document',m[0]\\);console.log\\('renderGraph syntax OK; '+m[0].split\\('\\\\n'\\).length+' lines'\\);}catch\\(e\\){console.log\\('SYNTAX ERROR:',e.message\\);}\")",
+      "Bash(node -e \"const fs=require\\('fs'\\);for\\(const f of ['e:/multi-agent/llm-data-explorer/chart_plugins/timearcs.json','e:/multi-agent/llm-data-explorer/chart_plugins/timearcs-gl.json']\\){try{const j=JSON.parse\\(fs.readFileSync\\(f,'utf8'\\)\\);const fn=new Function\\('return '+j.renderScript\\);const renderFn=fn\\(\\);console.log\\(f,'OK type='+typeof renderFn,'len='+j.renderScript.length\\);}catch\\(e\\){console.log\\(f,'ERROR',e.message\\);}}\")",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(xargs wc -l)",
+      "Bash(cause_id)",
+      "Bash(event_id)",
+      "Bash(\\\\\"sql\\\\\":\\\\\"SELECT...\\\\\")",
+      "Bash(time)",
+      "Bash(actor)",
+      "Bash(python e:/multi-agent/llm-data-explorer/chart_plugins/_build_swimlane.py)",
+      "Bash(Get-ChildItem -Path \"e:\\\\multi-agent\\\\llm-data-explorer\" -Recurse -Directory)",
+      "Bash(Select-Object -ExpandProperty FullName)"
+    ]
+  }
+}

@@ -1,0 +1,3209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AdventureWorks2019 Data Explorer</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #ffffff; --bg2: #f7f6f2; --bg3: #efede8;
+    --text: #000000; --text2: #5a5a56; --text3: #8a8a84;
+    --border: rgba(0,0,0,0.1); --border2: rgba(0,0,0,0.18);
+    --accent: #534AB7; --accent-bg: #EEEDFE; --accent-text: #3C3489;
+    --success-bg: #EAF3DE; --success-text: #27500A;
+    --warn-bg: #FAEEDA; --warn-text: #633806;
+    --danger-bg: #FCEBEB; --danger-text: #791F1F;
+    --radius: 10px; --radius-sm: 6px;
+    --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    --mono: 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1c1a; --bg2: #252522; --bg3: #2e2e2b;
+      --text: #e8e6df; --text2: #a8a6a0; --text3: #6a6a64;
+      --border: rgba(255,255,255,0.1); --border2: rgba(255,255,255,0.18);
+      --accent: #7F77DD; --accent-bg: #26215C; --accent-text: #AFA9EC;
+      --success-bg: #173404; --success-text: #C0DD97;
+      --warn-bg: #412402; --warn-text: #FAC775;
+      --danger-bg: #501313; --danger-text: #F7C1C1;
+    }
+  }
+  body { font-family: var(--font); background: var(--bg); color: var(--text); min-height: 100vh; display: flex; flex-direction: column; }
+  header { padding: 18px 24px; border-bottom: 0.5px solid var(--border); display: flex; align-items: center; gap: 12px; background: var(--bg); }
+  .logo { width: 32px; height: 32px; background: var(--accent); border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .logo svg { width: 18px; height: 18px; fill: #fff; }
+  .header-text h1 { font-size: 16px; font-weight: 500; color: var(--text); }
+  .header-text p { font-size: 12px; color: var(--text3); margin-top: 1px; }
+  .badge { font-size: 11px; padding: 2px 8px; border-radius: 20px; background: var(--accent-bg); color: var(--accent-text); font-weight: 500; margin-left: auto; }
+  main { display: flex; flex: 1; overflow: hidden; height: calc(100vh - 61px); }
+  aside { width: 240px; flex-shrink: 0; border-right: 0.5px solid var(--border); background: var(--bg2); overflow-y: auto; padding: 12px 0; }
+  aside h2 { font-size: 11px; font-weight: 500; color: var(--text3); text-transform: uppercase; letter-spacing: 0.06em; padding: 8px 16px 4px; }
+  .schema-group { margin-bottom: 4px; }
+  .schema-table { display: flex; align-items: center; gap: 6px; padding: 5px 16px; font-size: 13px; color: var(--text2); cursor: pointer; border-radius: 0; transition: background 0.1s; }
+  .schema-table:hover { background: var(--bg3); color: var(--text); }
+  .schema-table.active { background: var(--accent-bg); color: var(--accent-text); font-weight: 500; }
+  .table-icon { width: 14px; height: 14px; flex-shrink: 0; opacity: 0.5; }
+  .schema-cols { display: none; padding: 2px 0 6px 30px; }
+  .schema-cols.open { display: block; }
+  .schema-col { font-size: 11px; color: var(--text3); padding: 2px 0; display: flex; gap: 6px; }
+  .col-type { color: var(--accent); font-family: var(--mono); font-size: 10px; }
+  .chat-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .messages { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 20px; }
+  .msg { display: flex; gap: 10px; align-items: flex-start; width: 100%; }
+  .msg.user { flex-direction: row-reverse; margin-left: auto; }
+  .avatar { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 500; flex-shrink: 0; margin-top: 2px; }
+  .avatar.ai { background: var(--accent-bg); color: var(--accent-text); }
+  .avatar.user { background: var(--bg3); color: var(--text2); }
+  .bubble { padding: 10px 14px; border-radius: var(--radius); font-size: 14px; line-height: 1.6; max-width: 600px; }
+  .bubble.ai { background: var(--bg2); border: 0.5px solid var(--border); color: var(--text); flex: 1; max-width: none; }
+  .bubble.user { background: var(--accent); color: #fff; }
+  .bubble p { margin-bottom: 8px; }
+  .bubble p:last-child { margin-bottom: 0; }
+  .bubble pre { background: var(--bg3); border: 0.5px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; font-family: var(--mono); font-size: 12px; overflow-x: auto; margin: 8px 0; white-space: pre-wrap; color: var(--text); }
+  .bubble table { border-collapse: collapse; width: 100%; font-size: 13px; margin: 8px 0; }
+  .bubble th { background: var(--bg3); padding: 6px 10px; text-align: left; font-weight: 500; border: 0.5px solid var(--border); font-size: 12px; color: var(--text2); }
+  .bubble td { padding: 5px 10px; border: 0.5px solid var(--border); color: var(--text); }
+  .bubble tr:nth-child(even) td { background: var(--bg2); }
+  .chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .chip { font-size: 12px; padding: 4px 10px; border-radius: 20px; background: var(--bg3); border: 0.5px solid var(--border); color: var(--text2); cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+  .chip:hover { background: var(--accent-bg); border-color: var(--accent); color: var(--accent-text); }
+  .input-row { padding: 16px 24px; border-top: 0.5px solid var(--border); background: var(--bg); display: flex; gap: 10px; align-items: flex-end; }
+  textarea { flex: 1; resize: none; border: 0.5px solid var(--border2); border-radius: var(--radius); padding: 10px 14px; font-family: var(--font); font-size: 14px; background: var(--bg2); color: var(--text); line-height: 1.5; max-height: 120px; min-height: 42px; outline: none; transition: border-color 0.15s; }
+  textarea:focus { border-color: var(--accent); }
+  textarea::placeholder { color: var(--text3); }
+  .send-btn { width: 38px; height: 38px; border-radius: var(--radius-sm); background: var(--accent); border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: opacity 0.15s; }
+  .send-btn:hover { opacity: 0.85; }
+  .send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .send-btn svg { width: 16px; height: 16px; fill: #fff; }
+  .typing { display: flex; align-items: center; gap: 4px; padding: 8px 4px; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text3); animation: bounce 1.2s infinite; }
+  .dot:nth-child(2) { animation-delay: 0.2s; }
+  .dot:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes bounce { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-5px)} }
+  .insight-card { background: var(--success-bg); border: 0.5px solid rgba(0,0,0,0.08); border-radius: var(--radius-sm); padding: 10px 12px; margin: 8px 0; font-size: 13px; color: var(--success-text); }
+  .insight-card.warn { background: var(--warn-bg); color: var(--warn-text); }
+  .detail-panel { background: var(--bg2); border: 0.5px solid var(--border); border-radius: var(--radius); padding: 12px; margin: 8px 0; }
+  .detail-panel h4 { font-size: 12px; font-weight: 500; color: var(--text2); margin-bottom: 8px; }
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+  .chart-frame { position: relative; margin: 10px 0; }
+  .chart-wrap { background: #ffffff; border: 0.5px solid var(--border); border-radius: var(--radius); padding: 14px 16px; position: relative; overflow: hidden; }
+  .chart-wrap.lineup-wrap { padding: 0; }
+  .lineup-wrap *:not(svg):not(svg *) { color: #000000 !important; }
+  .lineup-wrap [class*="agg"] { background: var(--bg3) !important; }
+  .chartjs-wrap canvas { max-height: 460px; }
+  .chart-expand-anchor { position: sticky; top: 0; left: 0; width: 0; height: 0; z-index: 1000; }
+  .chart-expand-btn { position: absolute; top: 8px; left: 8px; width: 26px; height: 26px; border-radius: var(--radius-sm); background: var(--bg3); border: 0.5px solid var(--border); cursor: pointer; display: flex; align-items: center; justify-content: center; opacity: 1; color: var(--text2); z-index: 1000; pointer-events: auto; }
+  .chart-expand-btn:hover { background: var(--accent-bg); color: var(--accent-text); border-color: var(--accent); }
+  .chart-expand-btn svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2; }
+  .chart-modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.78); z-index: 1000; align-items: center; justify-content: center; }
+  .chart-modal-backdrop.open { display: flex; }
+  .chart-modal { background: var(--bg); border: 0.5px solid var(--border); border-radius: var(--radius); width: 92vw; max-width: 1400px; height: 88vh; display: flex; flex-direction: column; overflow: hidden; }
+  .chart-modal-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; border-bottom: 0.5px solid var(--border); flex-shrink: 0; }
+  .chart-modal-title { font-size: 13px; font-weight: 500; color: var(--text); font-family: var(--font); }
+  .chart-modal-close { width: 28px; height: 28px; border-radius: var(--radius-sm); background: transparent; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--text2); transition: all 0.15s; }
+  .chart-modal-close:hover { background: var(--bg3); color: var(--text); }
+  .chart-modal-close svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; }
+  .chart-modal-body { flex: 1; padding: 16px; min-height: 0; background: #ffffff; }
+  .chart-modal-body .chartjs-wrap canvas { max-height: none; height: 100%; }
+  .tool-call { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text3); font-family: var(--mono); background: var(--bg3); border-radius: var(--radius-sm); padding: 5px 10px; margin: 6px 0; border-left: 2px solid var(--accent); }
+  .tool-call svg { width: 12px; height: 12px; fill: none; stroke: var(--accent); stroke-width: 2; flex-shrink: 0; }
+  .sql-toggle { margin-top: 12px; border: 0.5px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+  .sql-toggle > button { width: 100%; text-align: left; padding: 7px 10px; background: var(--bg3); border: none; cursor: pointer; font-size: 12px; color: var(--text2); display: flex; align-items: center; gap: 6px; font-family: var(--font); }
+  .sql-toggle > button:hover { color: var(--text); }
+  .sql-toggle > button svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; flex-shrink: 0; }
+  .sql-toggle .sql-chevron { margin-left: auto; transition: transform 0.2s; }
+  .sql-toggle.open .sql-chevron { transform: rotate(180deg); }
+  .sql-panel { display: none; padding: 10px; }
+  .sql-toggle.open .sql-panel { display: block; }
+  .sql-query-block { margin-bottom: 10px; }
+  .sql-query-block:last-child { margin-bottom: 0; }
+  .sql-query-meta { font-size: 11px; color: var(--text3); margin-bottom: 4px; font-family: var(--font); }
+  .new-chat-btn { width: calc(100% - 24px); margin: 12px 12px 8px; padding: 7px 12px; background: var(--accent); color: #fff; border: none; border-radius: var(--radius-sm); font-size: 13px; font-family: var(--font); cursor: pointer; font-weight: 500; transition: opacity 0.15s; display: flex; align-items: center; gap: 6px; }
+  .new-chat-btn:hover { opacity: 0.85; }
+  .history-section-title { font-size: 11px; font-weight: 500; color: var(--text3); text-transform: uppercase; letter-spacing: 0.06em; padding: 8px 16px 4px; }
+  .history-item { padding: 8px 16px 6px; cursor: pointer; border-left: 2px solid transparent; transition: background 0.1s; }
+  .history-item:hover { background: var(--bg3); }
+  .history-item.active { background: var(--accent-bg); border-left-color: var(--accent); }
+  .history-title { font-size: 13px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .history-item.active .history-title { color: var(--accent-text); font-weight: 500; }
+  .history-meta { display: flex; align-items: center; justify-content: space-between; margin-top: 2px; }
+  .history-date { font-size: 11px; color: var(--text3); }
+  .history-del { font-size: 15px; line-height: 1; padding: 0 3px; background: none; border: none; cursor: pointer; color: var(--text3); opacity: 0; transition: opacity 0.15s; font-family: var(--font); }
+  .history-item:hover .history-del { opacity: 1; }
+  .history-del:hover { color: var(--danger-text); }
+  .history-empty { padding: 28px 16px; font-size: 13px; color: var(--text3); text-align: center; line-height: 1.6; }
+  .db-selector-wrap { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+  .db-label { font-size: 12px; color: var(--text3); white-space: nowrap; }
+  .db-select { font-size: 13px; padding: 5px 10px; border: 0.5px solid var(--border2); border-radius: var(--radius-sm); background: var(--bg2); color: var(--text); font-family: var(--font); cursor: pointer; outline: none; max-width: 200px; }
+  .db-select:focus { border-color: var(--accent); }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/apexcharts@3/dist/apexcharts.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lineupjs@4/build/LineUpJS.css">
+<script src="https://cdn.jsdelivr.net/npm/lineupjs@4/build/LineUpJS.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.131.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.131.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<script src="schema_contexts/schema_context_adventureworks.js"></script>
+<script src="schema_contexts/schema_context_network_monitoring.js"></script>
+<script src="schema_contexts/schema_context_hpcdata.js"></script>
+<script src="schema_contexts/schema_context_network90mins.js"></script>
+<script src="schema_contexts/schema_context_vast1data.js"></script>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+  </div>
+  <div class="header-text">
+    <h1 id="header-title">Database Explorer</h1>
+    <p id="header-subtitle">Select a database to get started</p>
+  </div>
+  <div class="db-selector-wrap">
+    <span class="db-label">Database:</span>
+    <select class="db-select" id="db-select" onchange="onDatabaseChange(this.value)">
+      <option value="">Loading…</option>
+    </select>
+    <span class="badge">AI-powered</span>
+  </div>
+</header>
+
+<main>
+  <aside>
+    <button class="new-chat-btn" onclick="newChat()">
+      <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M8 3v10M3 8h10"/></svg>
+      New Chat
+    </button>
+    <div class="history-section-title">Recent Chats</div>
+    <div id="history-list"></div>
+  </aside>
+  <div class="chat-area">
+    <div class="messages" id="messages"></div>
+
+    <div class="input-row">
+      <textarea id="input" placeholder="Ask anything about your data…" rows="1" onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+      <button class="send-btn" id="send-btn" onclick="sendMessage()">
+        <svg viewBox="0 0 16 16"><path d="M14.5 8L1.5 1.5l3 6.5-3 6.5L14.5 8z"/></svg>
+      </button>
+    </div>
+  </div>
+</main>
+
+<script>
+const API_PROXY_URL = 'http://127.0.0.1:8787/messages';
+const messages = [];
+let isLoading = false;
+let currentDatabase = 'AdventureWorks2019';
+
+function getDbInitials(db) {
+  return db.split(/[^a-zA-Z0-9]/).filter(Boolean).map(w => w[0].toUpperCase()).slice(0, 2).join('') || 'DB';
+}
+
+async function loadDatabases() {
+  try {
+    const res = await fetch(API_PROXY_URL.replace('/messages', '/databases'));
+    if (!res.ok) return;
+    const data = await res.json();
+    const dbs = data.databases || [];
+    if (!dbs.length) return;
+    const sel = document.getElementById('db-select');
+    sel.innerHTML = dbs.map(db =>
+      `<option value="${escHtml(db)}"${db === currentDatabase ? ' selected' : ''}>${escHtml(db)}</option>`
+    ).join('');
+    if (!dbs.includes(currentDatabase)) {
+      currentDatabase = dbs[0];
+      sel.value = currentDatabase;
+    }
+    updateHeaderForDb(currentDatabase);
+    if (!messages.length) {
+      document.getElementById('messages').innerHTML = '';
+      renderWelcomeMessage();
+    }
+  } catch (e) {
+    console.warn('Could not load databases:', e);
+  }
+}
+
+function onDatabaseChange(db) {
+  if (!db || db === currentDatabase) return;
+  currentDatabase = db;
+  updateHeaderForDb(db);
+  newChat();
+}
+
+function updateHeaderForDb(db) {
+  const isAW = db === 'AdventureWorks2019';
+  document.getElementById('header-title').textContent = db + ' Explorer';
+  document.getElementById('header-subtitle').textContent = isAW
+    ? 'Ask questions about sales, products, customers & more'
+    : 'Ask questions about your ' + db + ' data';
+  document.getElementById('input').placeholder = 'Ask anything about your ' + db + ' data…';
+}
+
+// ── Colour palette (light & dark compatible) ────────────────────────────────
+const CHART_COLORS = [
+  '#534AB7','#7F77DD','#2E9CDB','#4BC1A8',
+  '#E8833A','#E85858','#9B59B6','#27AE60','#F39C12','#1ABC9C',
+  '#3498DB','#E74C3C','#2ECC71','#F1C40F','#8E44AD'
+];
+
+// Returns '#000000' for light backgrounds, '#ffffff' for dark ones (WCAG luminance).
+function contrastColor(hex) {
+  const lin = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+  const r = lin(parseInt(hex.slice(1,3),16));
+  const g = lin(parseInt(hex.slice(3,5),16));
+  const b = lin(parseInt(hex.slice(5,7),16));
+  return 0.2126*r + 0.7152*g + 0.0722*b > 0.179 ? '#000000' : '#ffffff';
+}
+
+function getThemeColors() {
+  return {
+    text:  '#1a1a18',
+    text2: '#5a5a56',
+    grid:  'rgba(0,0,0,0.06)',
+    edge:  'rgba(30,30,30,0.4)',
+  };
+}
+
+// ── Chart.js config builder (bar, line, pie, doughnut, scatter) ─────────────
+function buildChartConfig(spec) {
+  const t = getThemeColors();
+  const type = spec.type || 'bar';
+  const isPolar = type === 'pie' || type === 'doughnut';
+
+  const datasets = (spec.datasets || []).map((ds, i) => {
+    const base = ds.color || CHART_COLORS[i % CHART_COLORS.length];
+    const bgAlpha = isPolar ? 'CC' : (type === 'line' ? '22' : 'BB');
+    return {
+      label: ds.label || '',
+      data: ds.data || [],
+      backgroundColor: isPolar
+        ? (ds.data || []).map((_, j) => CHART_COLORS[j % CHART_COLORS.length] + 'CC')
+        : base + bgAlpha,
+      borderColor: isPolar
+        ? (ds.data || []).map((_, j) => CHART_COLORS[j % CHART_COLORS.length])
+        : base,
+      borderWidth: type === 'line' ? 2 : 1.5,
+      pointRadius: type === 'line' ? 3 : 0,
+      tension: type === 'line' ? 0.35 : 0,
+      fill: false,
+    };
+  });
+
+  const scales = isPolar ? {} : {
+    x: {
+      ticks: { color: t.text2, font: { size: 11 }, maxRotation: 35 },
+      grid: { color: t.grid },
+      title: spec.xLabel ? { display: true, text: spec.xLabel, color: t.text2, font: { size: 11 } } : { display: false },
+    },
+    y: {
+      ticks: { color: t.text2, font: { size: 11 } },
+      grid: { color: t.grid },
+      title: spec.yLabel ? { display: true, text: spec.yLabel, color: t.text2, font: { size: 11 } } : { display: false },
+      beginAtZero: true,
+    },
+  };
+
+  return {
+    type,
+    data: { labels: spec.labels || [], datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      animation: { duration: 400 },
+      plugins: {
+        title: {
+          display: !!spec.title,
+          text: spec.title || '',
+          color: t.text,
+          font: { size: 13, weight: '500' },
+          padding: { bottom: 10 },
+        },
+        legend: {
+          labels: { color: t.text2, font: { size: 11 }, boxWidth: 12, padding: 14 },
+        },
+        tooltip: { mode: 'index', intersect: false },
+      },
+      scales,
+    },
+  };
+}
+
+// ── Chart.js renderer ───────────────────────────────────────────────────────
+function renderChartJS(wrap, spec) {
+  wrap.classList.add('chartjs-wrap');
+  wrap._chartSpec = spec;
+  const canvas = document.createElement('canvas');
+  wrap.appendChild(canvas);
+  new Chart(canvas, buildChartConfig(spec));
+}
+
+// ── ECharts option builder ──────────────────────────────────────────────────
+function buildEChartsOption(spec) {
+  const t = getThemeColors();
+  const titleOpt = spec.title
+    ? { text: spec.title, textStyle: { color: t.text, fontSize: 13, fontWeight: '500' }, left: 'center', top: 4 }
+    : undefined;
+
+  switch (spec.type) {
+
+    case 'rose': {
+      return {
+        color: CHART_COLORS,
+        title: titleOpt,
+        tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+        legend: { bottom: 4, textStyle: { color: t.text2, fontSize: 11 } },
+        series: [{
+          type: 'pie',
+          roseType: 'area',
+          radius: ['10%', '70%'],
+          center: ['50%', '52%'],
+          data: spec.data || [],
+          label: { color: t.text2, fontSize: 11 },
+          emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.3)' } },
+        }],
+      };
+    }
+
+    case 'radar': {
+      return {
+        color: CHART_COLORS,
+        title: titleOpt,
+        tooltip: {},
+        legend: { bottom: 4, textStyle: { color: t.text2, fontSize: 11 } },
+        radar: {
+          indicator: spec.indicators || [],
+          axisName: { color: t.text2, fontSize: 11 },
+          splitLine: { lineStyle: { color: t.grid } },
+          splitArea: { show: false },
+          axisLine: { lineStyle: { color: t.grid } },
+        },
+        series: [{
+          type: 'radar',
+          data: (spec.datasets || []).map((ds, i) => ({
+            name: ds.label,
+            value: ds.data,
+            itemStyle: { color: CHART_COLORS[i % CHART_COLORS.length] },
+            lineStyle: { color: CHART_COLORS[i % CHART_COLORS.length] },
+            areaStyle: { opacity: 0.15 },
+          })),
+        }],
+      };
+    }
+
+    case 'heatmap': {
+      const vals = (spec.data || []).map(d => d[2]);
+      const minVal = Math.min(...vals, 0);
+      const maxVal = Math.max(...vals);
+      return {
+        title: titleOpt,
+        tooltip: {
+          position: 'top',
+          formatter: p => {
+            const x = (spec.xLabels || [])[p.data[0]] ?? p.data[0];
+            const y = (spec.yLabels || [])[p.data[1]] ?? p.data[1];
+            return y + ', ' + x + ': ' + p.data[2];
+          },
+        },
+        grid: { top: titleOpt ? 50 : 24, bottom: 60, left: 80, right: 30 },
+        xAxis: {
+          type: 'category', data: spec.xLabels || [],
+          axisLabel: { color: t.text2, fontSize: 11, rotate: 30 },
+          splitArea: { show: true },
+        },
+        yAxis: {
+          type: 'category', data: spec.yLabels || [],
+          axisLabel: { color: t.text2, fontSize: 11 },
+          splitArea: { show: true },
+        },
+        visualMap: {
+          min: minVal, max: maxVal, calculable: true,
+          orient: 'horizontal', left: 'center', bottom: 4,
+          textStyle: { color: t.text2, fontSize: 11 },
+          inRange: { color: ['#EEF0FF', '#534AB7'] },
+        },
+        series: [{
+          type: 'heatmap', data: spec.data || [],
+          emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.5)' } },
+        }],
+      };
+    }
+
+    case 'treemap': {
+      return {
+        color: CHART_COLORS,
+        title: titleOpt,
+        tooltip: { formatter: '{b}: {c}' },
+        series: [{
+          type: 'treemap',
+          top: titleOpt ? 44 : 10, bottom: 10, left: 10, right: 10,
+          data: spec.data || [],
+          label: { show: true, fontSize: 12, color: '#fff' },
+          upperLabel: { show: true, height: 28, color: '#fff', fontSize: 12 },
+          itemStyle: { borderWidth: 2 },
+          levels: [
+            { itemStyle: { borderWidth: 4, gapWidth: 4 } },
+            { itemStyle: { borderWidth: 2, gapWidth: 2 } },
+          ],
+        }],
+      };
+    }
+
+    case 'sunburst': {
+      return {
+        color: CHART_COLORS,
+        title: titleOpt,
+        tooltip: { formatter: p => p.name + ': ' + p.value },
+        series: [{
+          type: 'sunburst',
+          center: ['50%', '54%'],
+          data: spec.data || [],
+          radius: ['10%', '90%'],
+          label: { fontSize: 11, color: t.text },
+          itemStyle: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
+          emphasis: { focus: 'ancestor' },
+        }],
+      };
+    }
+
+    case 'parallel': {
+      const dims = spec.dimensions || [];
+      return {
+        color: CHART_COLORS,
+        title: titleOpt,
+        tooltip: { trigger: 'item' },
+        parallelAxis: dims.map((name, idx) => ({
+          dim: idx, name,
+          nameTextStyle: { color: t.text2, fontSize: 11 },
+          axisLabel: { color: t.text2, fontSize: 10 },
+          axisLine: { lineStyle: { color: t.grid } },
+          axisTick: { lineStyle: { color: t.grid } },
+        })),
+        parallel: { top: titleOpt ? 60 : 40, bottom: 40, left: 60, right: 60 },
+        series: [{
+          type: 'parallel',
+          lineStyle: { width: 1.5, opacity: 0.7 },
+          data: (spec.data || []).map((row, i) => ({
+            name: row.label,
+            value: row.values,
+            lineStyle: { color: CHART_COLORS[i % CHART_COLORS.length] },
+          })),
+        }],
+      };
+    }
+
+    case 'sankey': {
+      const sankeyNodes = (spec.nodes || []).map(n => (typeof n === 'string' ? { name: n } : n));
+      const sankeyNodeNames = new Set(sankeyNodes.map(n => n.name));
+      const sankeyLinks = (spec.links || []).filter(l => sankeyNodeNames.has(l.source) && sankeyNodeNames.has(l.target));
+      return {
+        title: titleOpt,
+        tooltip: { trigger: 'item', triggerOn: 'mousemove' },
+        series: [{
+          type: 'sankey',
+          top: titleOpt ? 44 : 10, bottom: 20, left: 20, right: 120,
+          data: sankeyNodes,
+          links: sankeyLinks,
+          emphasis: { focus: 'adjacency' },
+          lineStyle: { color: 'gradient', curveness: 0.5, opacity: 0.4 },
+          label: { color: t.text, fontSize: 11 },
+          nodeWidth: 20, nodeGap: 12,
+        }],
+      };
+    }
+
+    case 'funnel': {
+      return {
+        color: CHART_COLORS,
+        title: titleOpt,
+        tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+        legend: { bottom: 4, textStyle: { color: t.text2, fontSize: 11 } },
+        series: [{
+          type: 'funnel',
+          top: titleOpt ? 50 : 20, bottom: 44, left: '8%', width: '84%',
+          min: 0,
+          label: { show: true, position: 'inside', color: '#fff', fontSize: 12 },
+          itemStyle: { borderWidth: 1 },
+          emphasis: { label: { fontSize: 14 } },
+          data: spec.data || [],
+        }],
+      };
+    }
+
+    case 'graph': {
+      const directed = !!spec.directed;
+      // Edge-count degree per node — drives node sizing and label visibility
+      const degreeMap = new Map();
+      (spec.links || []).forEach(l => {
+        const src = String(l.source), tgt = String(l.target);
+        degreeMap.set(src, (degreeMap.get(src) || 0) + 1);
+        degreeMap.set(tgt, (degreeMap.get(tgt) || 0) + 1);
+      });
+      // Only label the top-N nodes by degree to reduce clutter
+      const sortedDeg = [...degreeMap.values()].sort((a, b) => b - a);
+      const maxLabels = Math.min(25, Math.max(5, Math.ceil(sortedDeg.length * 0.15)));
+      const labelCutoff = sortedDeg.length ? sortedDeg[Math.min(maxLabels - 1, sortedDeg.length - 1)] : 0;
+      // Map each unique edge category to a distinct color for the legend and edges
+      const categories = [...new Set((spec.links || []).map(l => l.label).filter(Boolean))];
+      const catColor = new Map(categories.map((c, i) => [c, CHART_COLORS[i % CHART_COLORS.length]]));
+      // Node role: source-only, destination-only, or both
+      const sourceSet = new Set((spec.links || []).map(l => String(l.source)));
+      const destSet   = new Set((spec.links || []).map(l => String(l.target)));
+      const ROLE_COLOR = { both: '#534AB7', source: '#E85858', dest: '#2E9CDB' };
+      // Deduplicate nodes by id — duplicate IDs corrupt ECharts' internal id→dataIndex
+      const nodeMap = new Map();
+      (spec.nodes || []).forEach((n, i) => {
+        const id = String(n.id ?? i);
+        if (nodeMap.has(id)) return;
+        const deg = degreeMap.get(id) || 1;
+        const sz = n.size || (n.value != null
+          ? Math.max(16, Math.min(72, Math.sqrt(n.value) * 4))
+          : Math.max(10, Math.min(56, 8 + Math.sqrt(deg) * 4)));
+        const role = (sourceSet.has(id) && destSet.has(id)) ? 'both'
+          : sourceSet.has(id) ? 'source' : 'dest';
+        nodeMap.set(id, {
+          id,
+          name: n.name || id,
+          symbolSize: sz,
+          itemStyle: { color: n.color || ROLE_COLOR[role] },
+          label: { show: deg >= labelCutoff },
+        });
+      });
+      const nodes = Array.from(nodeMap.values());
+      const graphNodeIds = new Set(nodes.map(n => n.id));
+      // Pre-compute link value range for proportional edge thickness
+      const linkValues = (spec.links || []).map(l => l.value).filter(v => v != null && v > 0);
+      const minLV = linkValues.length ? Math.min(...linkValues) : 1;
+      const maxLV = linkValues.length ? Math.max(...linkValues) : 1;
+      const scaleWidth = v => (v != null && maxLV > minLV)
+        ? 1 + ((v - minLV) / (maxLV - minLV)) * 5
+        : (v != null ? 2 : 1);
+      const links = (spec.links || []).filter(l => {
+        const src = String(l.source), tgt = String(l.target);
+        return src !== tgt && graphNodeIds.has(src) && graphNodeIds.has(tgt);
+      }).map(l => ({
+        source: String(l.source),
+        target: String(l.target),
+        name: l.label != null ? String(l.label) : undefined,
+        value: l.value,
+        label: { show: false, formatter: l.label != null ? String(l.label) : '', fontSize: 10, color: t.text },
+        emphasis: { label: { show: l.label != null, color: t.text } },
+        lineStyle: { width: l.width != null ? l.width : scaleWidth(l.value), opacity: 0.65, color: l.color || (l.label ? catColor.get(l.label) : null) || null },
+      }));
+      return {
+        color: CHART_COLORS,
+        title: titleOpt,
+        tooltip: {
+          formatter: p => p.dataType === 'edge'
+            ? (p.data.name ? p.data.name + (p.data.value != null ? ' (' + p.data.value + ')' : '') : p.data.source + (directed ? ' → ' : ' — ') + p.data.target)
+            : p.name,
+        },
+        legend: {
+          data: [
+            { name: 'Both (src & dst)', icon: 'circle', itemStyle: { color: ROLE_COLOR.both } },
+            { name: 'Source only',      icon: 'circle', itemStyle: { color: ROLE_COLOR.source } },
+            { name: 'Destination only', icon: 'circle', itemStyle: { color: ROLE_COLOR.dest } },
+            ...categories.map((c, i) => ({ name: c, icon: 'roundRect', itemStyle: { color: CHART_COLORS[i % CHART_COLORS.length] } })),
+          ],
+          orient: 'vertical', right: 10, top: 'middle',
+          textStyle: { color: t.text, fontSize: 11 },
+          selectedMode: false,
+        },
+        series: [{
+          type: 'graph',
+          layout: spec.layout || 'force',
+          data: nodes,
+          links,
+          roam: true,
+          label: { show: false, position: 'inside', fontSize: 10, color: '#ffffff', textBorderColor: t.text, textBorderWidth: 2 },
+          edgeLabel: { show: false, fontSize: 10 },
+          edgeSymbol: directed ? ['none', 'arrow'] : ['none', 'none'],
+          edgeSymbolSize: [0, 8],
+          lineStyle: { curveness: spec.curved ? 0.2 : 0 },
+          force: { repulsion: 200, edgeLength: [50, 180], gravity: 0.05 },
+          emphasis: { focus: 'adjacency', lineStyle: { width: 4 }, edgeLabel: { show: true, fontSize: 10 } },
+        }],
+      };
+    }
+
+    default:
+      throw new Error('Unknown ECharts type: ' + spec.type);
+  }
+}
+
+// ── ECharts renderer ────────────────────────────────────────────────────────
+function renderECharts(wrap, spec) {
+  if (!wrap.style.height) wrap.style.height = '480px';
+  wrap._chartSpec = spec;
+  const option = buildEChartsOption(spec);
+  option.backgroundColor = '#ffffff';
+  const ec = echarts.init(wrap);
+  ec.setOption(option);
+  window.addEventListener('resize', () => ec.resize());
+}
+
+// ── Force-graph renderer with twin collapsing ────────────────────────────────
+function renderGraph(wrap, spec) {
+  if (!wrap.style.height) wrap.style.height = '520px';
+  wrap._chartSpec = spec;
+  const t = getThemeColors();
+
+  const allNodes = (spec.nodes || []).map((n, i) => ({ ...n, id: String(n.id ?? i) }));
+  const rawLinks = (spec.links || [])
+    .map(l => ({ ...l, source: String(l.source), target: String(l.target) }))
+    .filter(l => l.source !== l.target);
+  const validIds = new Set(allNodes.map(n => n.id));
+  const links = rawLinks.filter(l => validIds.has(l.source) && validIds.has(l.target));
+
+  // ── Twin pass: identical (partner|label) sets ───────────────────────────
+  const sigSet = new Map();
+  allNodes.forEach(n => sigSet.set(n.id, new Set()));
+  links.forEach(l => {
+    const lab = l.label || '';
+    sigSet.get(l.source).add(l.target + '|' + lab);
+    sigSet.get(l.target).add(l.source + '|' + lab);
+  });
+  const bySig = new Map();
+  allNodes.forEach(n => {
+    const k = [...sigSet.get(n.id)].sort().join('||');
+    if (!bySig.has(k)) bySig.set(k, []);
+    bySig.get(k).push(n.id);
+  });
+  const idToGid = new Map();
+  const gInfo = new Map();
+  let gIdx = 0;
+  for (const members of bySig.values()) {
+    if (members.length >= 2) {
+      gIdx++;
+      const gid = '__grp_' + gIdx;
+      gInfo.set(gid, { kind: 'twin', members, idx: gIdx, expanded: false,
+        displayLabel: 'Group ' + gIdx + ' (' + members.length + ')' });
+      members.forEach(m => idToGid.set(m, gid));
+    }
+  }
+
+  // ── Categories from link labels ─────────────────────────────────────────
+  const categories = [...new Set(links.map(l => l.label).filter(Boolean))];
+  const catColor = new Map(categories.map((c, i) => [c, CHART_COLORS[i % CHART_COLORS.length]]));
+  const catVisible = new Map(categories.map(c => [c, true]));
+
+  // ── Precompute total connections per group (for node sizing) ─────────
+  const groupTotalConns = new Map();
+  for (const [gid, info] of gInfo) {
+    const memberSet = new Set(info.members);
+    groupTotalConns.set(gid, links.filter(l => memberSet.has(l.source) || memberSet.has(l.target)).length);
+  }
+
+  // ── Build wrap layout ─────────────────────────────────────────────────
+  wrap.innerHTML = '';
+  wrap.style.display = 'flex';
+  wrap.style.flexDirection = 'column';
+
+  // Hint bar (group count note)
+  const hdr = document.createElement('div');
+  hdr.style.cssText = 'flex:0 0 auto;padding:3px 0 2px;text-align:center;';
+  if (gIdx > 0) {
+    const note = document.createElement('div');
+    note.style.cssText = 'font-size:10px;color:var(--text3,#999);margin-bottom:2px;';
+    note.textContent = gIdx + ' collapsed group' + (gIdx > 1 ? 's' : '') + ' (twins + hub-leaves) — click ◆ node to expand, click red node to collapse';
+    hdr.appendChild(note);
+  }
+  wrap.appendChild(hdr);
+
+  // Main row: chart canvas + right control panel
+  const mainRow = document.createElement('div');
+  mainRow.style.cssText = 'flex:1 1 auto;display:flex;flex-direction:row;min-height:0;';
+  wrap.appendChild(mainRow);
+
+  const chartDiv = document.createElement('div');
+  chartDiv.style.cssText = 'flex:1 1 auto;min-height:380px;';
+  mainRow.appendChild(chartDiv);
+
+  // ── Control panel ─────────────────────────────────────────────────────
+  let grpBtn = null, catBtn = null;
+  const legendItems = [];
+
+  const ctrlPanel = document.createElement('div');
+  ctrlPanel.style.cssText = 'flex:0 0 152px;width:152px;background:var(--bg2,#f8f8f8);border-left:0.5px solid var(--border,#ddd);padding:10px 8px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;font-size:12px;color:var(--text,#333);';
+  mainRow.appendChild(ctrlPanel);
+
+  // Search box
+  const searchSec = document.createElement('div');
+  searchSec.style.cssText = 'display:flex;flex-direction:column;gap:4px;';
+  const searchInput = document.createElement('input');
+  searchInput.type = 'text';
+  searchInput.placeholder = 'Search nodes...';
+  searchInput.style.cssText = 'font-size:11px;padding:4px 6px;border:0.5px solid var(--border2,#ccc);border-radius:3px;background:white;color:#000000;font-family:var(--font,sans-serif);';
+  searchInput.onchange = () => { searchQuery = searchInput.value.trim().toLowerCase(); rerender(); };
+  searchInput.onkeyup = () => { searchQuery = searchInput.value.trim().toLowerCase(); rerender(); };
+  searchSec.appendChild(searchInput);
+  ctrlPanel.appendChild(searchSec);
+
+  const mkPanelSection = (title) => {
+    const sec = document.createElement('div');
+    const lbl = document.createElement('div');
+    lbl.style.cssText = 'font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--text3,#999);margin-bottom:5px;padding-bottom:3px;border-bottom:0.5px solid var(--border,#ddd);';
+    lbl.textContent = title;
+    sec.appendChild(lbl);
+    return sec;
+  };
+  const mkBtn = (lbl) => {
+    const b = document.createElement('button');
+    b.style.cssText = 'font-size:11px;padding:3px 7px;border-radius:3px;border:1px solid var(--border2,#ccc);background:transparent;color:var(--text,#444);cursor:pointer;width:100%;text-align:left;';
+    b.textContent = lbl;
+    return b;
+  };
+
+  // Edge color & opacity section
+  const edgeSec = mkPanelSection('Edges');
+  const blackEdgeRow = document.createElement('label');
+  blackEdgeRow.style.cssText = 'display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--text,#333);';
+  const blackEdgeCb = document.createElement('input');
+  blackEdgeCb.type = 'checkbox';
+  blackEdgeCb.checked = false;
+  blackEdgeCb.style.cursor = 'pointer';
+  blackEdgeCb.onchange = () => { useColorEdgesByCategory = blackEdgeCb.checked; rerender(); };
+  blackEdgeRow.appendChild(blackEdgeCb);
+  blackEdgeRow.appendChild(document.createTextNode('Color edges by category'));
+  edgeSec.appendChild(blackEdgeRow);
+  
+  const opacityRow = document.createElement('div');
+  opacityRow.style.cssText = 'display:flex;flex-direction:column;gap:3px;';
+  const opacityLabel = document.createElement('div');
+  opacityLabel.style.cssText = 'font-size:11px;color:var(--text2,#666);';
+  opacityLabel.textContent = 'Opacity';
+  const opacitySlider = document.createElement('input');
+  opacitySlider.type = 'range';
+  opacitySlider.min = '0';
+  opacitySlider.max = '1';
+  opacitySlider.step = '0.1';
+  opacitySlider.value = '0.5';
+  opacitySlider.style.cssText = 'width:100%;cursor:pointer;';
+  opacitySlider.onchange = () => { edgeOpacity = parseFloat(opacitySlider.value); rerender(); };
+  opacityRow.appendChild(opacityLabel);
+  opacityRow.appendChild(opacitySlider);
+  edgeSec.appendChild(opacityRow);
+  
+  const edgeLabelRow = document.createElement('div');
+  edgeLabelRow.style.cssText = 'display:flex;flex-direction:column;gap:3px;';
+  const edgeLabelLabel = document.createElement('div');
+  edgeLabelLabel.style.cssText = 'font-size:11px;color:var(--text2,#666);';
+  edgeLabelLabel.textContent = 'Label size';
+  const edgeLabelSlider = document.createElement('input');
+  edgeLabelSlider.type = 'range';
+  edgeLabelSlider.min = '6';
+  edgeLabelSlider.max = '16';
+  edgeLabelSlider.step = '1';
+  edgeLabelSlider.value = '10';
+  edgeLabelSlider.style.cssText = 'width:100%;cursor:pointer;';
+  edgeLabelSlider.onchange = () => { edgeLabelFontSize = parseInt(edgeLabelSlider.value); rerender(); };
+  edgeLabelRow.appendChild(edgeLabelLabel);
+  edgeLabelRow.appendChild(edgeLabelSlider);
+  edgeSec.appendChild(edgeLabelRow);
+  ctrlPanel.appendChild(edgeSec);
+
+  // Nodes opacity section
+  const nodeSec = mkPanelSection('Nodes');
+  const catColorRow = document.createElement('label');
+  catColorRow.style.cssText = 'display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--text,#333);';
+  const catColorCb = document.createElement('input');
+  catColorCb.type = 'checkbox';
+  catColorCb.checked = false;
+  catColorCb.style.cursor = 'pointer';
+  catColorCb.onchange = () => { useColorByCategory = catColorCb.checked; rerender(); };
+  catColorRow.appendChild(catColorCb);
+  catColorRow.appendChild(document.createTextNode('Color nodes by category'));
+  nodeSec.appendChild(catColorRow);
+
+  const nodeOpacityRow = document.createElement('div');
+  nodeOpacityRow.style.cssText = 'display:flex;flex-direction:column;gap:3px;';
+  const nodeOpacityLabel = document.createElement('div');
+  nodeOpacityLabel.style.cssText = 'font-size:11px;color:var(--text2,#666);';
+  nodeOpacityLabel.textContent = 'Opacity';
+  const nodeOpacitySlider = document.createElement('input');
+  nodeOpacitySlider.type = 'range';
+  nodeOpacitySlider.min = '0';
+  nodeOpacitySlider.max = '1';
+  nodeOpacitySlider.step = '0.1';
+  nodeOpacitySlider.value = '1.0';
+  nodeOpacitySlider.style.cssText = 'width:100%;cursor:pointer;';
+  nodeOpacitySlider.onchange = () => { nodeOpacity = parseFloat(nodeOpacitySlider.value); rerender(); };
+  nodeOpacityRow.appendChild(nodeOpacityLabel);
+  nodeOpacityRow.appendChild(nodeOpacitySlider);
+  nodeSec.appendChild(nodeOpacityRow);
+  
+  const nodeLabelRow = document.createElement('div');
+  nodeLabelRow.style.cssText = 'display:flex;flex-direction:column;gap:3px;';
+  const nodeLabelLabel = document.createElement('div');
+  nodeLabelLabel.style.cssText = 'font-size:11px;color:var(--text2,#666);';
+  nodeLabelLabel.textContent = 'Label size';
+  const nodeLabelSlider = document.createElement('input');
+  nodeLabelSlider.type = 'range';
+  nodeLabelSlider.min = '6';
+  nodeLabelSlider.max = '16';
+  nodeLabelSlider.step = '1';
+  nodeLabelSlider.value = '10';
+  nodeLabelSlider.style.cssText = 'width:100%;cursor:pointer;';
+  nodeLabelSlider.onchange = () => { nodeLabelFontSize = parseInt(nodeLabelSlider.value); rerender(); };
+  nodeLabelRow.appendChild(nodeLabelLabel);
+  nodeLabelRow.appendChild(nodeLabelSlider);
+  nodeSec.appendChild(nodeLabelRow);
+  ctrlPanel.appendChild(nodeSec);
+
+  // Arrow section
+  const arrowSec = mkPanelSection('Arrows');
+  const showArrowRow = document.createElement('label');
+  showArrowRow.style.cssText = 'display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--text,#333);';
+  const showArrowCb = document.createElement('input');
+  showArrowCb.type = 'checkbox';
+  showArrowCb.checked = true;
+  showArrowCb.style.cursor = 'pointer';
+  showArrowCb.onchange = () => { showArrowheads = showArrowCb.checked; rerender(); };
+  showArrowRow.appendChild(showArrowCb);
+  showArrowRow.appendChild(document.createTextNode('Show arrowheads'));
+  arrowSec.appendChild(showArrowRow);
+
+  const arrowMinRow = document.createElement('div');
+  arrowMinRow.style.cssText = 'display:flex;flex-direction:column;gap:3px;';
+  const arrowMinLabel = document.createElement('div');
+  arrowMinLabel.style.cssText = 'font-size:11px;color:var(--text2,#666);';
+  arrowMinLabel.textContent = 'Min size';
+  const arrowMinSlider = document.createElement('input');
+  arrowMinSlider.type = 'range';
+  arrowMinSlider.min = '2.5';
+  arrowMinSlider.max = '12.5';
+  arrowMinSlider.step = '0.5';
+  arrowMinSlider.value = '8';
+  arrowMinSlider.style.cssText = 'width:100%;cursor:pointer;';
+  arrowMinSlider.onchange = () => { arrowheadMinSize = parseFloat(arrowMinSlider.value); rerender(); };
+  arrowMinRow.appendChild(arrowMinLabel);
+  arrowMinRow.appendChild(arrowMinSlider);
+  arrowSec.appendChild(arrowMinRow);
+  ctrlPanel.appendChild(arrowSec);
+
+  // Groups section
+  if (gIdx > 0) {
+    const grpSec = mkPanelSection('Groups');
+    grpBtn = mkBtn('Expand all groups');
+    grpBtn.onclick = () => {
+      const anyC = [...gInfo.values()].some(g => !g.expanded);
+      for (const g of gInfo.values()) g.expanded = anyC;
+      rerender();
+    };
+    grpSec.appendChild(grpBtn);
+    ctrlPanel.appendChild(grpSec);
+  }
+
+  // Categories section
+  if (categories.length > 1) {
+    const catSec = mkPanelSection('Categories');
+    catBtn = mkBtn('Hide all');
+    catBtn.onclick = () => {
+      const anyOn = categories.some(c => catVisible.get(c));
+      categories.forEach(c => catVisible.set(c, !anyOn));
+      rerender();
+    };
+    catSec.appendChild(catBtn);
+    const lgd = document.createElement('div');
+    lgd.style.cssText = 'display:flex;flex-direction:column;gap:5px;margin-top:6px;';
+    categories.forEach(cat => {
+      const itm = document.createElement('span');
+      itm.style.cssText = 'display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--text2,#666);white-space:nowrap;cursor:pointer;user-select:none;overflow:hidden;text-overflow:ellipsis;';
+      const sw = document.createElement('span');
+      sw.style.cssText = 'display:inline-block;width:10px;height:10px;border-radius:2px;flex-shrink:0;background:' + catColor.get(cat) + ';';
+      itm.appendChild(sw);
+      itm.appendChild(document.createTextNode(cat));
+      itm.onclick = () => { catVisible.set(cat, !catVisible.get(cat)); rerender(); };
+      lgd.appendChild(itm);
+      legendItems.push({ el: itm, cat });
+    });
+    catSec.appendChild(lgd);
+    ctrlPanel.appendChild(catSec);
+  }
+
+  const ec = echarts.init(chartDiv);
+  const directed = !!spec.directed;
+  const titleOpt = spec.title ? { text: spec.title, top: 5, left: 'center', textStyle: { color: t.text, fontSize: 13 } } : undefined;
+  const ROLE_COLOR = { both: '#2E9CDB', source: '#2E9CDB', dest: '#2E9CDB' };
+  const GROUP_COLOR_TWIN = '#2E9CDB';
+  let useColorEdgesByCategory = false;
+  let useColorByCategory = false;
+  let edgeOpacity = 0.5;
+  let nodeOpacity = 1.0;
+  let nodeLabelFontSize = 10;
+  let edgeLabelFontSize = 10;
+  let arrowheadMinSize = 8;
+  let showArrowheads = true;
+  let searchQuery = '';
+
+  function rerender() {
+    if (grpBtn) {
+      const anyCol = [...gInfo.values()].some(g => !g.expanded);
+      grpBtn.textContent = anyCol ? 'Expand all groups' : 'Collapse all groups';
+    }
+    if (catBtn) {
+      const anyVis = categories.some(c => catVisible.get(c));
+      catBtn.textContent = anyVis ? 'Hide all' : 'Show all';
+    }
+    legendItems.forEach(({ el, cat }) => {
+      const on = catVisible.get(cat);
+      el.style.opacity = on ? '1' : '0.35';
+      el.style.textDecoration = on ? 'none' : 'line-through';
+    });
+
+    // Display nodes
+    const idToDisp = new Map();
+    const dispEntries = [];
+    const seenG = new Set();
+    allNodes.forEach(n => {
+      const gid = idToGid.get(n.id);
+      if (gid && !gInfo.get(gid).expanded) {
+        if (!seenG.has(gid)) { seenG.add(gid); dispEntries.push({ kind: 'group', gid, info: gInfo.get(gid) }); }
+        idToDisp.set(n.id, gid);
+      } else {
+        dispEntries.push({ kind: 'node', node: n });
+        idToDisp.set(n.id, n.id);
+      }
+    });
+
+    // Filter + dedupe links
+    const visLinks = links.filter(l => !l.label || catVisible.get(l.label));
+    const linkMap = new Map();
+    visLinks.forEach(l => {
+      const s = idToDisp.get(l.source), tg = idToDisp.get(l.target);
+      if (s === tg) return;
+      const key = [s, tg].sort().join('|') + '|' + (l.label || '');
+      if (!linkMap.has(key)) linkMap.set(key, { source: s, target: tg, label: l.label, color: l.color, value: +(l.value || 1), count: 1 });
+      else { const e = linkMap.get(key); e.value += +(l.value || 1); e.count++; }
+    });
+    const dispLinks = [...linkMap.values()];
+
+    // Apply search filtering if query exists
+    let filteredEntries = dispEntries;
+    let filteredLinks = dispLinks;
+    if (searchQuery.length > 0) {
+      const matchedIds = new Set();
+      const neighborIds = new Set();
+      
+      // Find all nodes that match the search query
+      dispEntries.forEach(d => {
+        const id = d.kind === 'group' ? d.gid : d.node.id;
+        const name = d.kind === 'group' ? d.info.displayLabel : (d.node.name || d.node.id);
+        if (id.toString().toLowerCase().includes(searchQuery) || name.toString().toLowerCase().includes(searchQuery)) {
+          matchedIds.add(id);
+        }
+      });
+      
+      // Find all neighbors of matched nodes
+      dispLinks.forEach(l => {
+        if (matchedIds.has(l.source)) neighborIds.add(l.target);
+        if (matchedIds.has(l.target)) neighborIds.add(l.source);
+      });
+      
+      // Filter entries: keep matched nodes + neighbors
+      const visibleIds = new Set([...matchedIds, ...neighborIds]);
+      filteredEntries = dispEntries.filter(d => {
+        const id = d.kind === 'group' ? d.gid : d.node.id;
+        return visibleIds.has(id);
+      });
+      
+      // Filter links: keep only those connecting visible nodes
+      filteredLinks = dispLinks.filter(l => visibleIds.has(l.source) && visibleIds.has(l.target));
+    }
+
+    // Degree on display set
+    const degree = new Map();
+    filteredLinks.forEach(l => {
+      degree.set(l.source, (degree.get(l.source) || 0) + 1);
+      degree.set(l.target, (degree.get(l.target) || 0) + 1);
+    });
+    
+    // Calculate most common category for each node
+    const nodeMostCommonCat = new Map();
+    if (useColorByCategory && categories.length > 0) {
+      filteredLinks.forEach(l => {
+        if (l.label && catColor.has(l.label)) {
+          const catMap = (id) => {
+            if (!nodeMostCommonCat.has(id)) nodeMostCommonCat.set(id, new Map());
+            const m = nodeMostCommonCat.get(id);
+            m.set(l.label, (m.get(l.label) || 0) + 1);
+          };
+          catMap(l.source);
+          catMap(l.target);
+        }
+      });
+    }
+    const sortedDeg = [...degree.values()].sort((a, b) => b - a);
+    const maxLabels = Math.min(25, Math.max(5, Math.ceil(sortedDeg.length * 0.15)));
+    const labelCutoff = sortedDeg.length ? sortedDeg[Math.min(maxLabels - 1, sortedDeg.length - 1)] : 0;
+    const sourceSet = new Set(filteredLinks.map(l => l.source));
+    const destSet   = new Set(filteredLinks.map(l => l.target));
+
+    const nodes = filteredEntries.map(d => {
+      // Helper to get node color based on category or default
+      const getNodeColor = (nodeId) => {
+        if (useColorByCategory && nodeMostCommonCat.has(nodeId)) {
+          const catMap = nodeMostCommonCat.get(nodeId);
+          const mostCommonCat = [...catMap.entries()].sort((a, b) => b[1] - a[1])[0][0];
+          return catColor.get(mostCommonCat) || GROUP_COLOR_TWIN;
+        }
+        return GROUP_COLOR_TWIN;
+      };
+      
+      if (d.kind === 'group') {
+        const totalConns = groupTotalConns.get(d.gid) || d.info.members.length;
+        const sz = Math.max(22, Math.min(72, 14 + Math.sqrt(totalConns) * 5));
+        return {
+          id: d.gid,
+          name: '◆ ' + d.info.displayLabel,
+          symbol: 'diamond',
+          symbolSize: sz,
+          itemStyle: { color: getNodeColor(d.gid), borderColor: '#333', borderWidth: 1.5, opacity: nodeOpacity },
+          label: { show: true, position: 'inside', fontSize: nodeLabelFontSize, fontWeight: 'bold', color: t.text },
+          _isGroup: true, _gid: d.gid,
+        };
+      }
+      const n = d.node;
+      const id = n.id;
+      const deg = degree.get(id) || 1;
+      const sz = n.size || (n.value != null
+        ? Math.max(16, Math.min(72, Math.sqrt(n.value) * 4))
+        : Math.max(10, Math.min(56, 8 + Math.sqrt(deg) * 4)));
+      const role = (sourceSet.has(id) && destSet.has(id)) ? 'both' : sourceSet.has(id) ? 'source' : 'dest';
+      const inExp = idToGid.has(id) && gInfo.get(idToGid.get(id)).expanded;
+      return {
+        id,
+        name: n.name || id,
+        symbolSize: sz,
+        itemStyle: {
+          color: useColorByCategory ? getNodeColor(id) : (n.color || ROLE_COLOR[role]),
+          borderColor: inExp ? '#e63946' : null,
+          borderWidth: inExp ? 2.5 : 0,
+          opacity: nodeOpacity,
+        },
+        label: {
+          show: deg >= labelCutoff || inExp,
+          position: 'inside',
+          fontSize: nodeLabelFontSize,
+          color: inExp ? '#ffffff' : '#ffffff',
+          textBorderColor: inExp ? '#e63946' : t.text,
+          textBorderWidth: 2,
+          fontWeight: inExp ? 'bold' : 'normal',
+        },
+        _inExpandedGroup: inExp,
+        _expandedGid: inExp ? idToGid.get(id) : null,
+      };
+    });
+
+    const linkValues = filteredLinks.map(l => l.value).filter(v => v != null && v > 0);
+    const minLV = linkValues.length ? Math.min(...linkValues) : 1;
+    const maxLV = linkValues.length ? Math.max(...linkValues) : 1;
+    const scaleWidth = v => (v != null && maxLV > minLV)
+      ? 1 + ((v - minLV) / (maxLV - minLV)) * 5
+      : (v != null ? 2 : 1);
+    const echLinks = filteredLinks.map(l => {
+      const w = scaleWidth(l.value);
+      return {
+        source: l.source, target: l.target,
+        name: l.label != null ? String(l.label) + (l.count > 1 ? ' ×' + l.count : '') : undefined,
+        value: l.value,
+        label: { show: false, formatter: l.label != null ? String(l.label) : '', fontSize: edgeLabelFontSize, color: t.text },
+        emphasis: { label: { show: l.label != null, color: t.text } },
+        symbolSize: [0, Math.max(arrowheadMinSize, Math.min(25, w * 3.5))],
+        lineStyle: { width: w, opacity: edgeOpacity * 0.75, color: useColorEdgesByCategory ? (l.color || (l.label ? catColor.get(l.label) : null) || null) : '#000000' },
+      };
+    });
+
+    const option = {
+      backgroundColor: '#ffffff',
+      color: CHART_COLORS,
+      title: titleOpt,
+      tooltip: {
+        formatter: p => {
+          if (p.dataType === 'edge') {
+            return p.data.name ? p.data.name + (p.data.value != null ? ' (' + p.data.value + ')' : '')
+              : p.data.source + (directed ? ' → ' : ' — ') + p.data.target;
+          }
+          if (p.data._isGroup) {
+            const info = gInfo.get(p.data._gid);
+            const list = info.members.slice(0, 8).join(', ') + (info.members.length > 8 ? ', …' : '');
+            return '<b>' + p.name + '</b><br/>' + list + '<br/><i>click to expand</i>';
+          }
+          return p.name + (p.data._inExpandedGroup ? '<br/><i>click to collapse group</i>' : '');
+        },
+      },
+      legend: { show: false },
+      series: [{
+        type: 'graph',
+        layout: spec.layout || 'force',
+        data: nodes,
+        links: echLinks,
+        roam: true,
+        label: { show: false },
+        edgeLabel: { show: false, fontSize: 10 },
+        edgeSymbol: (directed && showArrowheads) ? ['none', 'arrow'] : ['none', 'none'],
+        lineStyle: { curveness: spec.curved ? 0.2 : 0 },
+        force: { repulsion: 200, edgeLength: [50, 180], gravity: 0.05 },
+        emphasis: { focus: 'adjacency', lineStyle: { width: 4 }, edgeLabel: { show: true, fontSize: 10 } },
+      }],
+    };
+    ec.setOption(option, true);
+  }
+
+  rerender();
+
+  ec.on('click', params => {
+    if (params.dataType !== 'node') return;
+    const d = params.data;
+    if (d && d._isGroup) { gInfo.get(d._gid).expanded = true; rerender(); }
+    else if (d && d._inExpandedGroup) { gInfo.get(d._expandedGid).expanded = false; rerender(); }
+  });
+
+  window.addEventListener('resize', () => ec.resize());
+}
+
+// ── Plotly renderer ─────────────────────────────────────────────────────────
+function renderPlotly(wrap, spec) {
+  if (!wrap.style.height) wrap.style.height = '420px';
+  wrap._chartSpec = spec;
+  const t = getThemeColors();
+  const layout = {
+    paper_bgcolor: '#ffffff',
+    plot_bgcolor:  '#ffffff',
+    font: { family: 'Segoe UI, system-ui, -apple-system, sans-serif', color: t.text, size: 12 },
+    margin: { t: spec.title ? 44 : 20, r: 20, b: 60, l: 70 },
+    showlegend: true,
+    legend: { font: { color: t.text, size: 11 } },
+    xaxis: { gridcolor: t.grid, tickfont: { color: t.text2, size: 11 }, linecolor: t.grid, zerolinecolor: t.grid },
+    yaxis: { gridcolor: t.grid, tickfont: { color: t.text2, size: 11 }, linecolor: t.grid, zerolinecolor: t.grid },
+  };
+  if (spec.title)  layout.title  = { text: spec.title,  font: { color: t.text,  size: 13 }, x: 0.5 };
+  if (spec.xLabel) layout.xaxis.title = { text: spec.xLabel, font: { color: t.text2, size: 11 } };
+  if (spec.yLabel) layout.yaxis.title = { text: spec.yLabel, font: { color: t.text2, size: 11 } };
+  let traces = [];
+
+  switch (spec.type) {
+    case 'box': {
+      traces = (spec.data || []).map((d, i) => ({
+        type: 'box',
+        name: d.label || d.name || ('Series ' + (i + 1)),
+        y: d.values || [],
+        marker: { color: CHART_COLORS[i % CHART_COLORS.length] },
+        line:   { color: CHART_COLORS[i % CHART_COLORS.length] },
+        boxpoints: 'outliers',
+        jitter: 0.3,
+      }));
+      break;
+    }
+    case 'violin': {
+      traces = (spec.data || []).map((d, i) => ({
+        type: 'violin',
+        name: d.label || d.name || ('Series ' + (i + 1)),
+        y: d.values || [],
+        marker:    { color: CHART_COLORS[i % CHART_COLORS.length] },
+        line:      { color: CHART_COLORS[i % CHART_COLORS.length] },
+        fillcolor: CHART_COLORS[i % CHART_COLORS.length] + '44',
+        box:       { visible: true },
+        meanline:  { visible: true },
+        points:    'outliers',
+      }));
+      break;
+    }
+    case 'waterfall': {
+      const vals = spec.values || [];
+      traces = [{
+        type: 'waterfall',
+        x: spec.labels || [],
+        y: vals,
+        measure: spec.measure || vals.map((_, i) => i === 0 ? 'absolute' : 'relative'),
+        connector:  { line: { color: 'rgba(0,0,0,0.2)' } },
+        increasing: { marker: { color: CHART_COLORS[0] } },
+        decreasing: { marker: { color: '#E85858' } },
+        totals:     { marker: { color: '#888888' } },
+        text: vals.map(v => (v > 0 ? '+' : '') + (typeof v === 'number' ? v.toLocaleString() : v)),
+        textposition: 'outside',
+      }];
+      break;
+    }
+    case 'candlestick': {
+      const rows = spec.data || [];
+      traces = [{
+        type:  'candlestick',
+        x:     rows.map(d => d.x || d.date || d.period),
+        open:  rows.map(d => d.open),
+        high:  rows.map(d => d.high),
+        low:   rows.map(d => d.low),
+        close: rows.map(d => d.close),
+        increasing: { line: { color: CHART_COLORS[0] } },
+        decreasing: { line: { color: '#E85858' } },
+      }];
+      layout.xaxis.type = 'category';
+      layout.xaxis.rangeslider = { visible: false };
+      break;
+    }
+  }
+
+  Plotly.newPlot(wrap, traces, layout, { responsive: true, displayModeBar: false });
+  window.addEventListener('resize', () => { try { Plotly.relayout(wrap, {}); } catch (_) {} });
+}
+
+// ── ApexCharts renderer ──────────────────────────────────────────────────────
+function renderApexCharts(wrap, spec) {
+  if (!wrap.style.height) {
+    if (spec.type === 'timeline') {
+      const labels = new Set();
+      (spec.data || []).forEach(d => labels.add(d.label || d.name || ''));
+      const rowCount = Math.max(1, labels.size);
+      wrap.style.height = Math.min(10000, Math.max(360, rowCount * 30 + 120)) + 'px';
+    } else {
+      wrap.style.height = '420px';
+    }
+  }
+  wrap._chartSpec = spec;
+  const t = getThemeColors();
+
+  const baseChart = {
+    background: '#ffffff',
+    toolbar: { show: false },
+    fontFamily: 'Segoe UI, system-ui, -apple-system, sans-serif',
+    foreColor: t.text,
+  };
+  const titleOpt = { text: spec.title || '', align: 'center', style: { fontSize: '13px', fontWeight: '500', color: t.text } };
+  const axisLabel = { style: { colors: t.text2, fontSize: '11px' } };
+  const axisTitle = color => ({ style: { color, fontSize: '11px' } });
+
+  let options = {};
+
+  switch (spec.type) {
+
+    case 'timeline': {
+      // Group rows by group/category — each group is a coloured series
+      const groups = new Map();
+      (spec.data || []).forEach(d => {
+        const grp = d.group || d.category || 'Task';
+        if (!groups.has(grp)) groups.set(grp, []);
+        groups.get(grp).push({
+          x: d.label || d.name || '',
+          y: [new Date(d.start).getTime(), new Date(d.end).getTime()],
+        });
+      });
+      const series = Array.from(groups, ([name, data]) => ({ name, data }));
+      options = {
+        chart: { ...baseChart, type: 'rangeBar', height: '100%' },
+        series,
+        plotOptions: { bar: { horizontal: true, barHeight: '65%', rangeBarGroupRows: true } },
+        colors: CHART_COLORS,
+        xaxis: { type: 'datetime', labels: axisLabel },
+        yaxis: { labels: axisLabel },
+        legend: { show: groups.size > 1, labels: { colors: t.text }, fontSize: '11px' },
+        title: titleOpt,
+        tooltip: { x: { format: 'MMM dd yyyy' } },
+        theme: { mode: 'light' },
+        grid: { borderColor: t.grid },
+      };
+      break;
+    }
+
+    case 'rangebar': {
+      const data = (spec.data || []).map(d => ({
+        x: d.label || d.name || d.category || '',
+        y: [+(d.min ?? d.low ?? 0), +(d.max ?? d.high ?? 0)],
+      }));
+      options = {
+        chart: { ...baseChart, type: 'rangeBar', height: '100%' },
+        series: [{ name: spec.seriesLabel || 'Range', data }],
+        plotOptions: { bar: { horizontal: true, barHeight: '45%' } },
+        colors: [CHART_COLORS[0]],
+        xaxis: {
+          labels: axisLabel,
+          ...(spec.xLabel ? { title: { text: spec.xLabel, ...axisTitle(t.text2) } } : {}),
+        },
+        yaxis: { labels: axisLabel },
+        title: titleOpt,
+        tooltip: { y: { formatter: v => v.toLocaleString() } },
+        theme: { mode: 'light' },
+        grid: { borderColor: t.grid },
+      };
+      break;
+    }
+
+    case 'rangearea': {
+      const labels = spec.labels || [];
+      const low  = spec.low  || [];
+      const high = spec.high || [];
+      const data = labels.map((x, i) => ({ x, y: [+(low[i] ?? 0), +(high[i] ?? 0)] }));
+      options = {
+        chart: { ...baseChart, type: 'rangeArea', height: '100%' },
+        series: [{ name: spec.seriesLabel || 'Range', type: 'rangeArea', data }],
+        colors: [CHART_COLORS[0]],
+        fill: { opacity: [0.22] },
+        stroke: { curve: 'smooth', width: [2] },
+        xaxis: {
+          categories: labels,
+          labels: axisLabel,
+          ...(spec.xLabel ? { title: { text: spec.xLabel, ...axisTitle(t.text2) } } : {}),
+        },
+        yaxis: {
+          labels: { ...axisLabel, formatter: v => v.toLocaleString() },
+          ...(spec.yLabel ? { title: { text: spec.yLabel, ...axisTitle(t.text2) } } : {}),
+        },
+        title: titleOpt,
+        tooltip: { shared: false },
+        theme: { mode: 'light' },
+        grid: { borderColor: t.grid },
+      };
+      break;
+    }
+
+  }
+
+  new ApexCharts(wrap, options).render();
+}
+
+// ── Dynet3D renderer ────────────────────────────────────────────────────────
+// Generalized 3D dynamic network visualization inspired by Dynet3D
+// (iDataVisualizationLab/HPCC). Renders a time series of network snapshots as
+// parallel 2D planes stacked along the z-axis; same-id nodes are linked across
+// time slices to show entity timelines. Powered by Three.js + d3-force.
+function renderDynet3D(wrap, spec) {
+  if (!wrap.style.height) wrap.style.height = '620px';
+  wrap._chartSpec = spec;
+  const t = getThemeColors();
+
+  // ── Parse + normalize input ──────────────────────────────────────────────
+  const snapshots = (spec.snapshots || []).map((s, i) => ({
+    time: s.time != null ? String(s.time) : ('T' + i),
+    activeNodes: (s.activeNodes || []).map(String),
+    links: (s.links || []).map(l => ({ ...l, source: String(l.source), target: String(l.target) })),
+  }));
+  const timeLabels = spec.timeLabels && spec.timeLabels.length
+    ? spec.timeLabels.map(String)
+    : snapshots.map(s => s.time);
+  const T = snapshots.length;
+
+  const nodeMap = new Map();
+  (spec.nodes || []).forEach(n => {
+    nodeMap.set(String(n.id), { ...n, id: String(n.id) });
+  });
+  snapshots.forEach(snap => {
+    snap.links.forEach(l => {
+      [l.source, l.target].forEach(id => {
+        if (!nodeMap.has(id)) nodeMap.set(id, { id, name: id });
+      });
+    });
+    snap.activeNodes.forEach(id => {
+      if (!nodeMap.has(id)) nodeMap.set(id, { id, name: id });
+    });
+  });
+  const allNodes = [...nodeMap.values()];
+  const nodeTypes = [...new Set(allNodes.map(n => n.type).filter(Boolean))];
+
+  // Aggregate union of links for layout
+  const aggMap = new Map();
+  snapshots.forEach(snap => {
+    snap.links.forEach(l => {
+      if (l.source === l.target) return;
+      const key = [l.source, l.target].sort().join('|');
+      aggMap.set(key, { source: l.source, target: l.target });
+    });
+  });
+
+  // ── 2D layout via d3-force ───────────────────────────────────────────────
+  const positions = new Map();
+  if (allNodes.length === 0 || typeof d3 === 'undefined') {
+    allNodes.forEach((n, i) => {
+      const a = (i / Math.max(1, allNodes.length)) * Math.PI * 2;
+      positions.set(n.id, { x: Math.cos(a) * 100, y: Math.sin(a) * 100 });
+    });
+  } else {
+    const simNodes = allNodes.map(n => ({ id: n.id }));
+    const simLinks = [...aggMap.values()].map(l => ({ source: l.source, target: l.target }));
+    const sim = d3.forceSimulation(simNodes)
+      .force('link', d3.forceLink(simLinks).id(d => d.id).distance(40).strength(0.6))
+      .force('charge', d3.forceManyBody().strength(-100))
+      .force('center', d3.forceCenter(0, 0))
+      .force('collide', d3.forceCollide(10))
+      .stop();
+    const ticks = Math.min(400, Math.max(120, Math.round(300 - simNodes.length * 0.5)));
+    for (let i = 0; i < ticks; i++) sim.tick();
+    simNodes.forEach(n => positions.set(n.id, { x: n.x, y: n.y }));
+  }
+
+  // Center + extent
+  const xs = [...positions.values()].map(p => p.x);
+  const ys = [...positions.values()].map(p => p.y);
+  const xMin = Math.min(...xs, 0), xMax = Math.max(...xs, 0);
+  const yMin = Math.min(...ys, 0), yMax = Math.max(...ys, 0);
+  const cx = (xMin + xMax) / 2, cy = (yMin + yMax) / 2;
+  positions.forEach(p => { p.x -= cx; p.y -= cy; });
+  const planeW = Math.max(200, (xMax - xMin) * 1.2);
+  const planeH = Math.max(150, (yMax - yMin) * 1.2);
+  const extent = Math.max(planeW, planeH);
+
+  // ── Build DOM (canvas + side panel) ──────────────────────────────────────
+  wrap.innerHTML = '';
+  wrap.style.display = 'flex';
+  wrap.style.flexDirection = 'row';
+  wrap.style.padding = '0';
+  wrap.style.gap = '0';
+
+  const canvasDiv = document.createElement('div');
+  canvasDiv.style.cssText = 'flex:1 1 auto;position:relative;background:#ffffff;min-height:400px;min-width:0;overflow:hidden;';
+  wrap.appendChild(canvasDiv);
+
+  if (spec.title) {
+    const titleEl = document.createElement('div');
+    titleEl.textContent = spec.title;
+    titleEl.style.cssText = 'position:absolute;top:8px;left:50%;transform:translateX(-50%);font-size:13px;font-weight:500;color:' + t.text + ';pointer-events:none;z-index:4;';
+    canvasDiv.appendChild(titleEl);
+  }
+
+  const frontBtn = document.createElement('button');
+  frontBtn.textContent = 'Reset to Front view';
+  frontBtn.style.cssText = 'position:absolute;top:8px;left:44px;font-size:11px;padding:4px 10px;border-radius:3px;border:0.5px solid var(--border2,#ccc);background:#fff;color:#444;cursor:pointer;z-index:5;';
+  canvasDiv.appendChild(frontBtn);
+
+  const sideBtn = document.createElement('button');
+  sideBtn.textContent = 'Side view';
+  sideBtn.style.cssText = 'position:absolute;top:8px;left:180px;font-size:11px;padding:4px 10px;border-radius:3px;border:0.5px solid var(--border2,#ccc);background:#fff;color:#444;cursor:pointer;z-index:5;';
+  canvasDiv.appendChild(sideBtn);
+
+  const panel = document.createElement('div');
+  panel.style.cssText = 'flex:0 0 230px;padding:12px;font-size:11px;background:var(--bg2,#f7f6f2);border-left:0.5px solid var(--border,rgba(0,0,0,0.1));overflow-y:auto;color:var(--text,#000);';
+  wrap.appendChild(panel);
+
+  // Check Three.js availability
+  if (typeof THREE === 'undefined') {
+    canvasDiv.innerHTML = '<div style="padding:20px;color:#888;font-size:13px;">Three.js failed to load — Dynet3D unavailable.</div>';
+    return;
+  }
+
+  // ── Three.js scene ───────────────────────────────────────────────────────
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0xffffff);
+
+  const W0 = canvasDiv.clientWidth || 800;
+  const H0 = canvasDiv.clientHeight || 540;
+
+  // Orthographic (parallel) projection — preserves true relative size and
+  // makes node sizes look consistent across the depth axis.
+  const aspect0 = W0 / H0;
+  const frustumH0 = Math.max(planeH, planeW / Math.max(0.0001, aspect0)) * 1.15;
+  const frustumW0 = frustumH0 * aspect0;
+  const camDist = Math.max(800, extent * 2.5);
+  const camera = new THREE.OrthographicCamera(
+    -frustumW0 / 2, frustumW0 / 2,
+     frustumH0 / 2, -frustumH0 / 2,
+    -50000, 50000
+  );
+  const frontPos = [0, 0, camDist];
+  camera.position.set(...frontPos);
+  camera.zoom = 1;
+  camera.lookAt(0, 0, 0);
+  camera.updateProjectionMatrix();
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+  renderer.setSize(W0, H0);
+  renderer.setPixelRatio(window.devicePixelRatio);
+  canvasDiv.appendChild(renderer.domElement);
+
+  const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.1;
+  controls.target.set(0, 0, 0);
+
+  frontBtn.onclick = () => {
+    camera.position.set(...frontPos);
+    controls.target.set(0, 0, 0);
+    if (typeof fitFrontView === 'function') fitFrontView();
+    else { camera.zoom = 1; camera.updateProjectionMatrix(); }
+    controls.update();
+  };
+  sideBtn.onclick = () => {
+    const d = Math.max(camDist, T * 100);
+    camera.position.set(-d * 0.7, d * 0.35, d * 0.7);
+    camera.zoom = 1;
+    camera.updateProjectionMatrix();
+    controls.target.set(0, 0, 0);
+    controls.update();
+  };
+
+  // ── Mutable state ────────────────────────────────────────────────────────
+  // showVariations defaults to OFF — the dim ghost spheres for inactive nodes
+  // overwhelm dense graphs. Users can opt in.
+  const state = {
+    showVariations: false,
+    showTimelines: true,
+    showUsers: true,
+    showNodes: true,
+    showLabels: true,
+    showTimeLabels: true,
+    linkType: 'straight',
+    linkOpacity: 0.7,
+    networkExpand: Math.max(40, Math.min(220, extent * 0.5)),
+    timeResolution: 1,
+    visualizing: 'all',
+    searchTerm: '',
+    nodeSize: 0.2,
+    labelSize: 0.3,
+    timeLabelSize: 1.6,  // time labels are bigger than node labels
+    labelsNearOnly: false,
+    labelNearDist: 0.6,
+    // Default to "all" — occlusion handles clutter at render time, so the
+    // candidate cap is mostly a perf knob for very large datasets.
+    maxNodeLabels: 0,    // filled in once allNodes is known
+  };
+  state.maxNodeLabels = allNodes.length;
+
+  // ── Link categories (for legend + per-category toggle) ───────────────────
+  const linkCats = new Set();
+  snapshots.forEach(s => s.links.forEach(l => { if (l.type) linkCats.add(String(l.type)); }));
+  const linkCatList = [...linkCats];
+  const catColor = new Map();
+  const catVisible = new Map();
+  const palette = (typeof CHART_COLORS !== 'undefined' && CHART_COLORS.length)
+    ? CHART_COLORS
+    : ['#534AB7', '#E85858', '#2E9CDB', '#27AE60', '#F2994A', '#9B51E0', '#56CCF2', '#F2C94C'];
+  linkCatList.forEach((c, i) => {
+    catColor.set(c, palette[i % palette.length]);
+    catVisible.set(c, true);
+  });
+
+  // ── Aggregate degree across all snapshots (for top-N label selection) ───
+  const aggDegree = new Map();
+  snapshots.forEach(s => s.links.forEach(l => {
+    aggDegree.set(l.source, (aggDegree.get(l.source) || 0) + 1);
+    aggDegree.set(l.target, (aggDegree.get(l.target) || 0) + 1);
+  }));
+
+  const groups = {
+    planes: new THREE.Group(),
+    nodes: new THREE.Group(),
+    links: new THREE.Group(),
+    timelines: new THREE.Group(),
+    labels: new THREE.Group(),
+    timeLabels: new THREE.Group(),
+  };
+  Object.values(groups).forEach(g => scene.add(g));
+
+  function clearGroup(g) {
+    while (g.children.length) {
+      const c = g.children.pop();
+      if (c.geometry) c.geometry.dispose();
+      if (c.material) {
+        // Don't dispose label textures — they're shared from labelTexCache.
+        if (c.material.map && !c.material.map._cached) c.material.map.dispose();
+        c.material.dispose();
+      }
+    }
+  }
+
+  // Label textures are shared across slices: many sprites use the same text
+  // (e.g. "172.28.22.186" labelled at every slice the IP is active in), so
+  // we allocate one CanvasTexture per unique (text, color) and reuse it.
+  const labelTexCache = new Map();
+  function makeTextSprite(text, color, sizeMul) {
+    const key = String(text) + '|' + (color || '#333');
+    let cached = labelTexCache.get(key);
+    if (!cached) {
+      const fontSize = 28;
+      const bold = (color === '#4a6cb3' || color === '#3858b8');
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      ctx.font = (bold ? '600 ' : '') + fontSize + 'px Segoe UI, system-ui, sans-serif';
+      const txt = String(text);
+      const w = Math.ceil(ctx.measureText(txt).width) + 10;
+      canvas.width = w; canvas.height = fontSize + 10;
+      ctx.font = (bold ? '600 ' : '') + fontSize + 'px Segoe UI, system-ui, sans-serif';
+      ctx.fillStyle = color || '#333';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(txt, 5, canvas.height / 2);
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.needsUpdate = true;
+      tex._cached = true;
+      cached = { canvas, tex };
+      labelTexCache.set(key, cached);
+    }
+    const mat = new THREE.SpriteMaterial({ map: cached.tex, transparent: true, depthTest: false });
+    const sprite = new THREE.Sprite(mat);
+    const s = extent * 0.0010 * state.labelSize * (sizeMul || 1);
+    // _baseScale is the "screen-fixed" world scale. The per-frame label pass
+    // divides this by camera.zoom so labels stay the same pixel size while
+    // the user zooms in/out.
+    sprite._baseScale = { x: cached.canvas.width * s, y: cached.canvas.height * s };
+    sprite.scale.set(sprite._baseScale.x, sprite._baseScale.y, 1);
+    return sprite;
+  }
+
+  function nodeColor(n, active) {
+    if (!active) return 0xcccccc;
+    if (n.color) return new THREE.Color(n.color).getHex();
+    if (n.type === 'user') return 0x534AB7;
+    if (n.type === 'job')  return 0xE85858;
+    if (n.type === 'node') return 0x666666;
+    return 0x2E9CDB;
+  }
+
+  function isVisibleByType(n) {
+    if (!state.showUsers && n.type === 'user') return false;
+    if (!state.showNodes && n.type !== 'user') return false;
+    if (state.visualizing !== 'all' && n.type !== state.visualizing) return false;
+    return true;
+  }
+
+  function matchesSearch(n) {
+    if (!state.searchTerm) return true;
+    const term = state.searchTerm.toLowerCase();
+    return (n.id.toLowerCase().includes(term)) || ((n.name || '').toLowerCase().includes(term));
+  }
+
+  // ── (Re)build scene ──────────────────────────────────────────────────────
+  function buildScene() {
+    Object.values(groups).forEach(clearGroup);
+    if (T === 0) return;
+
+    // Aggregate by time resolution
+    const bins = [];
+    for (let i = 0; i < T; i += state.timeResolution) {
+      const merged = {
+        label: timeLabels[i] || ('T' + i),
+        activeNodes: new Set(),
+        links: [],
+      };
+      for (let j = i; j < Math.min(T, i + state.timeResolution); j++) {
+        const s = snapshots[j];
+        s.activeNodes.forEach(id => merged.activeNodes.add(id));
+        s.links.forEach(l => {
+          merged.activeNodes.add(l.source);
+          merged.activeNodes.add(l.target);
+          merged.links.push(l);
+        });
+      }
+      bins.push(merged);
+    }
+    const N = bins.length;
+    const spacing = state.networkExpand;
+    const totalDepth = (N - 1) * spacing;
+    const z0 = -totalDepth / 2;
+
+    // ── Category + search filters cascade to nodes ───────────────────────
+    // A node is "effective-active" at slice i only if it has at least one
+    // incident link there whose category is currently visible AND (when a
+    // search term is set) at least one endpoint matches the search.
+    // Untyped links count as visible. Active nodes with no links at this
+    // slice (rare; happens only when the user supplied explicit
+    // `activeNodes`) are kept regardless so they don't disappear silently.
+    const isLinkCatVisible = (l) =>
+      !l.type || !catVisible.has(l.type) || catVisible.get(l.type);
+    const passesSearchId = (id) => {
+      if (!state.searchTerm) return true;
+      const n = nodeMap.get(id);
+      return n ? matchesSearch(n) : false;
+    };
+    const isLinkVisible = (l) => {
+      if (!isLinkCatVisible(l)) return false;
+      if (!state.searchTerm) return true;
+      // Strict: both endpoints must match the search term, so the visible
+      // network is the induced subgraph on the matching node set.
+      return passesSearchId(l.source) && passesSearchId(l.target);
+    };
+    const effectiveActive = bins.map(bin => {
+      const set = new Set();
+      bin.links.forEach(l => {
+        if (!isLinkVisible(l)) return;
+        set.add(l.source); set.add(l.target);
+      });
+      bin.activeNodes.forEach(id => {
+        if (state.searchTerm && !passesSearchId(id)) return;
+        if (!bin.links.some(l => l.source === id || l.target === id)) set.add(id);
+      });
+      return set;
+    });
+
+    // ── Time axis: blue arrow along z at the top of the scene ──────────────
+    // All time labels are anchored to this axis so they form a single line
+    // parallel to the time dimension instead of scattering above the planes.
+    const axisX = -planeW / 2;
+    const axisY = planeH / 2 + extent * 0.10;
+    const arrowPad = Math.max(40, spacing * 0.5);
+    const arrowStart = new THREE.Vector3(axisX, axisY, z0 - arrowPad);
+    const arrowEnd   = new THREE.Vector3(axisX, axisY, z0 + totalDepth + arrowPad);
+    const arrowDir   = new THREE.Vector3().subVectors(arrowEnd, arrowStart).normalize();
+    const arrowLen   = arrowStart.distanceTo(arrowEnd);
+    const headLen    = Math.max(20, Math.min(60, arrowLen * 0.05));
+    const headWidth  = headLen * 0.4;
+    const axisArrow  = new THREE.ArrowHelper(arrowDir, arrowStart, arrowLen, 0x3858b8, headLen, headWidth);
+    if (state.showTimeLabels) groups.planes.add(axisArrow);
+
+    // Time planes (grids)
+    bins.forEach((bin, i) => {
+      const z = z0 + i * spacing;
+      const planeGeo = new THREE.PlaneGeometry(planeW, planeH, 8, 6);
+      const wireMat = new THREE.LineBasicMaterial({ color: 0xbcbcbc, transparent: true, opacity: 0.35 });
+      const wire = new THREE.LineSegments(new THREE.EdgesGeometry(planeGeo), wireMat);
+      wire.position.z = z;
+      groups.planes.add(wire);
+      planeGeo.dispose();
+
+      // Subtle interior grid
+      const gh = new THREE.GridHelper(Math.max(planeW, planeH), 6, 0xdddddd, 0xdddddd);
+      gh.rotation.x = Math.PI / 2;
+      gh.position.z = z;
+      gh.material.transparent = true;
+      gh.material.opacity = 0.18;
+      groups.planes.add(gh);
+
+      // Time tick label anchored on the axis arrow at this plane's z. Always
+      // visible by default; shown in blue at 1.6× the node-label size.
+      if (state.showTimeLabels) {
+        const tlab = makeTextSprite(bin.label, '#3858b8', state.timeLabelSize);
+        tlab.position.set(axisX + extent * 0.02, axisY + extent * 0.012, z);
+        tlab.userData = { kind: 'timeLabel' };
+        groups.timeLabels.add(tlab);
+      }
+    });
+
+    // Nodes per time slice. Base radius is intentionally small; the user
+    // tunes with the "Node size" slider in the panel.
+    const baseR    = Math.max(1.2, extent * 0.005) * state.nodeSize;
+    const variantR = Math.max(0.7, extent * 0.0025) * state.nodeSize;
+    const sphereGeo = new THREE.SphereGeometry(baseR, 10, 10);
+    const variationGeo = new THREE.SphereGeometry(variantR, 6, 6);
+    bins.forEach((bin, i) => {
+      const z = z0 + i * spacing;
+      allNodes.forEach(n => {
+        if (!isVisibleByType(n)) return;
+        if (!matchesSearch(n)) return;
+        const active = effectiveActive[i].has(n.id);
+        if (!active && !state.showVariations) return;
+        const pos = positions.get(n.id);
+        const col = nodeColor(n, active);
+        const mat = new THREE.MeshBasicMaterial({
+          color: col,
+          transparent: !active,
+          opacity: active ? 1 : 0.35,
+        });
+        const mesh = new THREE.Mesh(active ? sphereGeo : variationGeo, mat);
+        mesh.position.set(pos.x, pos.y, z);
+        mesh.userData = { kind: 'node', id: n.id, time: i, name: n.name || n.id };
+        groups.nodes.add(mesh);
+      });
+    });
+
+    // Links per slice
+    bins.forEach((bin, i) => {
+      const z = z0 + i * spacing;
+      bin.links.forEach(l => {
+        // Apply both filters (category + search) at once.
+        if (!isLinkVisible(l)) return;
+        const sN = nodeMap.get(l.source), tN = nodeMap.get(l.target);
+        if (!sN || !tN) return;
+        if (!isVisibleByType(sN) || !isVisibleByType(tN)) return;
+        const a = positions.get(l.source);
+        const b = positions.get(l.target);
+        if (!a || !b) return;
+        let pts;
+        if (state.linkType === 'curved') {
+          const dx = b.x - a.x, dy = b.y - a.y;
+          const dist = Math.hypot(dx, dy) || 1;
+          const nx = -dy / dist, ny = dx / dist;
+          const mx = (a.x + b.x) / 2 + nx * dist * 0.18;
+          const my = (a.y + b.y) / 2 + ny * dist * 0.18;
+          const curve = new THREE.QuadraticBezierCurve3(
+            new THREE.Vector3(a.x, a.y, z),
+            new THREE.Vector3(mx, my, z),
+            new THREE.Vector3(b.x, b.y, z)
+          );
+          pts = curve.getPoints(16);
+        } else {
+          pts = [new THREE.Vector3(a.x, a.y, z), new THREE.Vector3(b.x, b.y, z)];
+        }
+        const geom = new THREE.BufferGeometry().setFromPoints(pts);
+        const color = l.color ? new THREE.Color(l.color).getHex()
+          : (l.type && catColor.has(l.type)) ? new THREE.Color(catColor.get(l.type)).getHex()
+          : (l.type === 'add' ? 0x2da14a : l.type === 'remove' ? 0xe85858 : 0xa83232);
+        const mat = new THREE.LineBasicMaterial({
+          color, transparent: true, opacity: state.linkOpacity,
+        });
+        const line = new THREE.Line(geom, mat);
+        line.userData = { kind: 'link', source: l.source, target: l.target, time: i, type: l.type };
+        groups.links.add(line);
+      });
+    });
+
+    // Entity timelines (same id across slices)
+    if (state.showTimelines && N > 1) {
+      allNodes.forEach(n => {
+        if (!isVisibleByType(n)) return;
+        if (!matchesSearch(n)) return;
+        const presentZ = [];
+        bins.forEach((bin, i) => {
+          if (effectiveActive[i].has(n.id)) presentZ.push(z0 + i * spacing);
+        });
+        if (presentZ.length < 2) return;
+        const pos = positions.get(n.id);
+        const pts = presentZ.map(z => new THREE.Vector3(pos.x, pos.y, z));
+        const geom = new THREE.BufferGeometry().setFromPoints(pts);
+        const mat = new THREE.LineBasicMaterial({
+          color: nodeColor(n, true),
+          transparent: true,
+          opacity: 0.5,
+        });
+        const line = new THREE.Line(geom, mat);
+        line.userData = { kind: 'timeline', id: n.id };
+        groups.timelines.add(line);
+      });
+    }
+
+    // Node labels — labelled at every slice the node is active in (so labels
+    // are consistent and don't blink in/out as the camera rotates). Visibility
+    // is then resolved per-frame by the screen-space occlusion pass, which
+    // hides labels that overlap higher-priority labels.
+    if (state.showLabels) {
+      // Eligible IDs = top-N by aggregate degree, plus any search-matched IDs.
+      let candidateIds;
+      const visibleNodes = allNodes.filter(isVisibleByType);
+      if (state.maxNodeLabels >= visibleNodes.length) {
+        candidateIds = new Set(visibleNodes.map(n => n.id));
+      } else {
+        const sorted = [...visibleNodes].sort(
+          (a, b) => (aggDegree.get(b.id) || 0) - (aggDegree.get(a.id) || 0)
+        );
+        candidateIds = new Set(
+          sorted.slice(0, Math.max(0, state.maxNodeLabels)).map(n => n.id)
+        );
+      }
+      if (state.searchTerm) {
+        visibleNodes.forEach(n => { if (matchesSearch(n)) candidateIds.add(n.id); });
+      }
+      bins.forEach((bin, i) => {
+        const z = z0 + i * spacing;
+        effectiveActive[i].forEach(id => {
+          if (!candidateIds.has(id)) return;
+          const n = nodeMap.get(id);
+          if (!n) return;
+          const pos = positions.get(id);
+          if (!pos) return;
+          const sp = makeTextSprite(n.name || n.id, '#555');
+          sp.position.set(pos.x, pos.y + Math.max(2, baseR * 1.6), z);
+          sp.userData = { kind: 'label', id, time: i };
+          groups.labels.add(sp);
+        });
+      });
+    }
+    labelDirty = true;
+  }
+
+  // Declared before the first buildScene() call because buildScene flips it.
+  let labelDirty = true;
+  let lastCamHash = '';
+
+  buildScene();
+
+  // ── Hover highlight: dims everything not associated with the focused id ──
+  function setHighlight(focusId) {
+    const isRelated = (u) => {
+      if (!u || !u.kind) return false;
+      if (u.id === focusId) return true;
+      if (u.kind === 'link' && (u.source === focusId || u.target === focusId)) return true;
+      return false;
+    };
+    const apply = (g) => g.children.forEach(o => {
+      if (!o.material) return;
+      if (o._origOpacity == null) {
+        o._origOpacity = o.material.opacity;
+        o._origTransparent = o.material.transparent;
+      }
+      if (focusId == null) {
+        o.material.opacity = o._origOpacity;
+        o.material.transparent = o._origTransparent;
+      } else if (isRelated(o.userData)) {
+        o.material.opacity = Math.min(1, Math.max(0.85, o._origOpacity));
+        o.material.transparent = true;
+      } else {
+        o.material.opacity = o._origOpacity * 0.08;
+        o.material.transparent = true;
+      }
+    });
+    apply(groups.nodes); apply(groups.links);
+    apply(groups.timelines); apply(groups.labels);
+  }
+  let currentFocus = null;
+
+  // ── Fit-to-content for the Front view ────────────────────────────────────
+  // After the scene is built, pick a zoom that keeps the active node cloud
+  // comfortably within the viewport. Re-invoked when the user clicks Front view.
+  function fitFrontView() {
+    if (!positions.size) return;
+    let mnX = Infinity, mxX = -Infinity, mnY = Infinity, mxY = -Infinity;
+    positions.forEach(p => {
+      if (p.x < mnX) mnX = p.x; if (p.x > mxX) mxX = p.x;
+      if (p.y < mnY) mnY = p.y; if (p.y > mxY) mxY = p.y;
+    });
+    const cw = Math.max(1, mxX - mnX);
+    const ch = Math.max(1, mxY - mnY);
+    const fitZoom = Math.min(
+      (camera.right - camera.left) / cw,
+      (camera.top   - camera.bottom) / ch
+    ) * 0.85;
+    camera.zoom = Math.max(0.1, Math.min(20, fitZoom));
+    camera.updateProjectionMatrix();
+  }
+  fitFrontView();
+
+  // ── Side panel UI ────────────────────────────────────────────────────────
+  const visualizingOptions = ['<option value="all">All</option>']
+    .concat(nodeTypes.map(typ => `<option value="${typ}">${typ}</option>`)).join('');
+  const row = (lbl, ctrl) => `<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;gap:8px;"><span style="color:var(--text2,#666);">${lbl}</span>${ctrl}</div>`;
+  const inputStyle = 'font-size:11px;padding:2px 4px;background:var(--bg,#fff);color:var(--text,#000);border:0.5px solid var(--border2,#ccc);border-radius:3px;';
+  const cb = (key) => `<input type="checkbox" data-key="${key}">`;
+  const sel = (key, opts) => `<select data-key="${key}" style="${inputStyle}">${opts}</select>`;
+  const rng = (key, min, max, step, val) => `<input type="range" data-key="${key}" min="${min}" max="${max}" step="${step}" value="${val}" style="width:110px;">`;
+
+  panel.innerHTML = `
+    <div style="font-weight:600;font-size:12px;margin-bottom:8px;color:var(--text,#000);">Control panel</div>
+
+    <div style="font-size:10px;color:var(--text3,#999);text-transform:uppercase;letter-spacing:0.05em;margin:6px 0 4px;">Input</div>
+    ${nodeTypes.length > 1 ? row('Visualizing', sel('visualizing', visualizingOptions)) : ''}
+    ${row('# Time-steps', `<span style="font-weight:500;">${T}</span>`)}
+
+    <div style="font-size:10px;color:var(--text3,#999);text-transform:uppercase;letter-spacing:0.05em;margin:10px 0 4px;">Settings</div>
+    ${row('Show Variations', cb('showVariations'))}
+    ${row('Show timelines', cb('showTimelines'))}
+    ${row('Show users', cb('showUsers'))}
+    ${row('Show nodes', cb('showNodes'))}
+    ${row('Show labels', cb('showLabels'))}
+    ${row('Show time labels', cb('showTimeLabels'))}
+    ${row('Labels near camera', cb('labelsNearOnly'))}
+    ${row('Label cutoff', rng('labelNearDist', 0.1, 2, 0.05, state.labelNearDist))}
+    ${row('Node size', rng('nodeSize', 0.2, 4, 0.1, state.nodeSize))}
+    ${row('Label size', rng('labelSize', 0.3, 3, 0.1, state.labelSize))}
+    ${row('Max node labels', rng('maxNodeLabels', 0, Math.max(50, allNodes.length), 1, state.maxNodeLabels))}
+    ${row('Link type', sel('linkType', '<option value="straight">Straight</option><option value="curved">Curved</option>'))}
+    ${row('Link opacity', rng('linkOpacity', 0, 1, 0.05, state.linkOpacity))}
+    ${row('Network Expand', rng('networkExpand', 10, 1200, 10, state.networkExpand))}
+    ${row('Time Resolution', sel('timeResolution', '<option value="1">1×</option><option value="2">2×</option><option value="3">3×</option><option value="5">5×</option>'))}
+
+    ${linkCatList.length ? `
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin:10px 0 4px;">
+        <span style="font-size:10px;color:var(--text3,#999);text-transform:uppercase;letter-spacing:0.05em;">Link types</span>
+        <a id="dyn-legend-toggle" style="cursor:pointer;color:var(--accent,#534AB7);font-size:10px;user-select:none;">Hide all</a>
+      </div>
+      <div id="dyn-legend" style="display:flex;flex-wrap:wrap;gap:3px 8px;">
+        ${linkCatList.map(c => `
+          <span data-cat="${String(c).replace(/"/g, '&quot;')}" style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;user-select:none;font-size:10px;">
+            <span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${catColor.get(c)};"></span>${c}
+          </span>
+        `).join('')}
+      </div>
+    ` : ''}
+
+    <div style="font-size:10px;color:var(--text3,#999);text-transform:uppercase;letter-spacing:0.05em;margin:10px 0 4px;">Output</div>
+    ${row('Total nodes', `<span data-out="totalNodes" style="font-weight:500;"></span>`)}
+    ${row('Total links', `<span data-out="totalLinks" style="font-weight:500;"></span>`)}
+
+    <input type="text" placeholder="Search e.g. node1" data-key="searchTerm" style="width:100%;margin-top:10px;padding:5px 8px;${inputStyle}">
+  `;
+
+  const totalLinks = snapshots.reduce((acc, s) => acc + s.links.length, 0);
+  panel.querySelector('[data-out="totalNodes"]').textContent = allNodes.length;
+  panel.querySelector('[data-out="totalLinks"]').textContent = totalLinks;
+
+  // ── Legend click toggles for link categories ─────────────────────────────
+  const legendEl = panel.querySelector('#dyn-legend');
+  const legendToggleEl = panel.querySelector('#dyn-legend-toggle');
+  const refreshLegendStyles = () => {
+    if (!legendEl) return;
+    legendEl.querySelectorAll('[data-cat]').forEach(el => {
+      const on = catVisible.get(el.dataset.cat);
+      el.style.opacity = on ? '1' : '0.35';
+      el.style.textDecoration = on ? 'none' : 'line-through';
+    });
+    if (legendToggleEl) {
+      const anyOn = linkCatList.some(c => catVisible.get(c));
+      legendToggleEl.textContent = anyOn ? 'Hide all' : 'Show all';
+    }
+  };
+  if (legendEl) {
+    legendEl.querySelectorAll('[data-cat]').forEach(el => {
+      el.addEventListener('click', () => {
+        const c = el.dataset.cat;
+        catVisible.set(c, !catVisible.get(c));
+        refreshLegendStyles();
+        buildScene();
+      });
+    });
+  }
+  if (legendToggleEl) {
+    legendToggleEl.addEventListener('click', () => {
+      const anyOn = linkCatList.some(c => catVisible.get(c));
+      linkCatList.forEach(c => catVisible.set(c, !anyOn));
+      refreshLegendStyles();
+      buildScene();
+    });
+  }
+
+  // Keys whose changes don't require rebuilding the scene (handled in animate loop)
+  const NO_REBUILD = new Set(['labelsNearOnly', 'labelNearDist']);
+
+  // Wire inputs
+  panel.querySelectorAll('[data-key]').forEach(el => {
+    const k = el.dataset.key;
+    if (el.type === 'checkbox') el.checked = state[k];
+    else el.value = String(state[k]);
+    const update = () => {
+      let v;
+      if (el.type === 'checkbox') v = el.checked;
+      else if (el.type === 'range') v = +el.value;
+      else if (el.tagName === 'SELECT') {
+        v = isFinite(+el.value) && el.value !== '' ? +el.value : el.value;
+      } else v = el.value;
+      state[k] = v;
+      if (NO_REBUILD.has(k)) labelDirty = true;
+      else buildScene();
+    };
+    el.addEventListener('change', update);
+    if (el.type === 'range' || el.type === 'text') el.addEventListener('input', update);
+  });
+
+  // ── Hover tooltip ────────────────────────────────────────────────────────
+  const tooltip = document.createElement('div');
+  tooltip.style.cssText = 'position:absolute;pointer-events:none;background:rgba(0,0,0,0.78);color:#fff;font-size:11px;padding:4px 8px;border-radius:3px;display:none;z-index:10;white-space:nowrap;';
+  canvasDiv.appendChild(tooltip);
+
+  const raycaster = new THREE.Raycaster();
+  const mouse = new THREE.Vector2();
+  renderer.domElement.addEventListener('pointermove', e => {
+    const rect = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(mouse, camera);
+    const hit = raycaster.intersectObjects(groups.nodes.children, false)[0];
+    const newFocus = hit && hit.object.userData && hit.object.userData.id ? hit.object.userData.id : null;
+    if (hit && newFocus) {
+      tooltip.style.display = 'block';
+      tooltip.style.left = (e.clientX - rect.left + 8) + 'px';
+      tooltip.style.top = (e.clientY - rect.top + 8) + 'px';
+      const ud = hit.object.userData;
+      tooltip.textContent = ud.name + ' @ ' + (timeLabels[ud.time * state.timeResolution] || ('T' + ud.time));
+    } else {
+      tooltip.style.display = 'none';
+    }
+    if (newFocus !== currentFocus) {
+      currentFocus = newFocus;
+      setHighlight(currentFocus);
+    }
+  });
+  renderer.domElement.addEventListener('pointerleave', () => {
+    tooltip.style.display = 'none';
+    if (currentFocus != null) { currentFocus = null; setHighlight(null); }
+  });
+
+  // ── Label visibility: distance + screen-space occlusion ─────────────────
+  // Runs only when the camera pose changes (or after a scene rebuild). Picks
+  // a non-overlapping set of labels in screen space, prioritised by node
+  // degree and depth toward the camera. `labelDirty` and `lastCamHash` are
+  // declared earlier so buildScene() can flip the dirty flag.
+  function camHash() {
+    const p = camera.position, t = controls.target;
+    return [p.x, p.y, p.z, t.x, t.y, t.z, camera.zoom]
+      .map(v => v.toFixed(1)).join(',');
+  }
+
+  const _viewDir = new THREE.Vector3();
+  const _tmp = new THREE.Vector3();
+  const _proj = new THREE.Vector3();
+  function updateLabelVisibility() {
+    const sw = renderer.domElement.clientWidth;
+    const sh = renderer.domElement.clientHeight;
+    if (!sw || !sh) return;
+    camera.getWorldDirection(_viewDir);
+    const cutoff = (camDist + extent) * state.labelNearDist;
+    const frustumW = (camera.right - camera.left) / Math.max(0.0001, camera.zoom);
+    const frustumH = (camera.top   - camera.bottom) / Math.max(0.0001, camera.zoom);
+    const zoomInv = 1 / Math.max(0.0001, camera.zoom);
+
+    // Keep labels at a constant screen size: divide their world scale by
+    // camera.zoom so the on-screen pixel footprint matches the base scale.
+    const applyZoomScale = sp => {
+      if (!sp._baseScale) return;
+      sp.scale.set(sp._baseScale.x * zoomInv, sp._baseScale.y * zoomInv, 1);
+    };
+
+    // Time labels: distance-cull only (no occlusion — they're axis ticks).
+    groups.timeLabels.children.forEach(sp => {
+      applyZoomScale(sp);
+      if (!state.labelsNearOnly) { sp.visible = true; return; }
+      _tmp.copy(sp.position).sub(camera.position);
+      const depth = _tmp.dot(_viewDir);
+      sp.visible = depth >= 0 && depth <= cutoff;
+    });
+
+    if (!state.showLabels) {
+      groups.labels.children.forEach(sp => { sp.visible = false; });
+      return;
+    }
+
+    // Gather candidate node labels (apply distance cull, project to screen).
+    const items = [];
+    groups.labels.children.forEach(sprite => {
+      applyZoomScale(sprite);
+      const u = sprite.userData;
+      if (!u || u.kind !== 'label') { sprite.visible = false; return; }
+      _tmp.copy(sprite.position).sub(camera.position);
+      const depth = _tmp.dot(_viewDir);
+      if (state.labelsNearOnly && (depth < 0 || depth > cutoff)) {
+        sprite.visible = false; return;
+      }
+      _proj.copy(sprite.position).project(camera);
+      if (_proj.x < -1.3 || _proj.x > 1.3 || _proj.y < -1.3 || _proj.y > 1.3) {
+        sprite.visible = false; return;
+      }
+      const sx = (_proj.x + 1) * 0.5 * sw;
+      const sy = (1 - _proj.y) * 0.5 * sh;
+      const lw = (sprite.scale.x / frustumW) * sw;
+      const lh = (sprite.scale.y / frustumH) * sh;
+      const deg = aggDegree.get(u.id) || 0;
+      // Higher degree wins; closer-to-camera depth as tiebreaker.
+      const priority = deg * 1000 + (1 - _proj.z);
+      items.push({ sprite, x0: sx - lw / 2, x1: sx + lw / 2,
+                            y0: sy - lh / 2, y1: sy + lh / 2, priority });
+    });
+    items.sort((a, b) => b.priority - a.priority);
+
+    const accepted = [];
+    for (let k = 0; k < items.length; k++) {
+      const it = items[k];
+      let blocked = false;
+      for (let j = 0; j < accepted.length; j++) {
+        const a = accepted[j];
+        if (it.x0 < a.x1 && it.x1 > a.x0 && it.y0 < a.y1 && it.y1 > a.y0) {
+          blocked = true; break;
+        }
+      }
+      if (blocked) { it.sprite.visible = false; }
+      else { accepted.push(it); it.sprite.visible = true; }
+    }
+  }
+
+  // ── Animation loop ───────────────────────────────────────────────────────
+  let running = true;
+  function animate() {
+    if (!running) return;
+    requestAnimationFrame(animate);
+    controls.update();
+    const hash = camHash();
+    if (labelDirty || hash !== lastCamHash) {
+      lastCamHash = hash;
+      labelDirty = false;
+      updateLabelVisibility();
+    }
+    renderer.render(scene, camera);
+  }
+  animate();
+
+  // ── Resize handling ──────────────────────────────────────────────────────
+  // Preserves the current frustum height; recomputes left/right from the new
+  // aspect ratio so the scene neither stretches nor shrinks vertically.
+  const ro = new ResizeObserver(() => {
+    const w = canvasDiv.clientWidth, h = canvasDiv.clientHeight;
+    if (w > 0 && h > 0) {
+      const camH = camera.top - camera.bottom;
+      const newAspect = w / h;
+      const newW = camH * newAspect;
+      camera.left = -newW / 2;
+      camera.right = newW / 2;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+    }
+  });
+  ro.observe(canvasDiv);
+
+  // Stop animation when the wrap is removed from DOM
+  const mo = new MutationObserver(() => {
+    if (!document.body.contains(wrap)) {
+      running = false;
+      ro.disconnect();
+      mo.disconnect();
+      renderer.dispose();
+    }
+  });
+  mo.observe(document.body, { childList: true, subtree: true });
+}
+
+// ── Chart registry ──────────────────────────────────────────────────────────
+// Each entry: { render(wrap, spec), promptDescription }
+// render()           — receives an empty .chart-wrap div and the parsed spec JSON
+// promptDescription  — injected into the system prompt so the LLM knows the spec format
+//
+// To add a new chart type:
+//   1. Add an entry below with a render function wrapping your chart code
+//   2. Write a promptDescription that shows the LLM exactly what JSON to emit
+const chartRegistry = {
+
+  // ── Chart.js types ────────────────────────────────────────────────────────
+  bar: {
+    render: renderChartJS,
+    promptDescription: '- **bar** — comparisons, rankings, grouped side-by-side metrics. Spec: { "type":"bar", "title":"...", "xLabel":"...", "yLabel":"...", "labels":[...], "datasets":[{"label":"...","data":[...]}] }',
+  },
+  line: {
+    render: renderChartJS,
+    promptDescription: '- **line** — trends over time; use date strings as labels. Same spec shape as bar.',
+  },
+  pie: {
+    render: renderChartJS,
+    promptDescription: '- **pie** — proportions/share (max 8 slices). Omit xLabel/yLabel. Same spec shape as bar.',
+  },
+  doughnut: {
+    render: renderChartJS,
+    promptDescription: '- **doughnut** — same as pie with a centre hole. Omit xLabel/yLabel.',
+  },
+  scatter: {
+    render: renderChartJS,
+    promptDescription: '- **scatter** — correlation between two numeric variables. data items must be {"x":n,"y":n} objects. Spec: { "type":"scatter", "title":"...", "xLabel":"...", "yLabel":"...", "datasets":[{"label":"...","data":[{"x":1,"y":2},...]}] }',
+  },
+
+  // ── ECharts types ─────────────────────────────────────────────────────────
+  rose: {
+    render: renderECharts,
+    promptDescription: '- **rose** — Nightingale/rose chart; like a pie but petal radius encodes value magnitude. Good for ranked category comparisons. Spec: { "type":"rose", "title":"...", "data":[{"name":"...","value":123}] }',
+  },
+  radar: {
+    render: renderECharts,
+    promptDescription: '- **radar** — spider/web chart for multi-attribute comparison across entities. Spec: { "type":"radar", "title":"...", "indicators":[{"name":"...","max":100}], "datasets":[{"label":"...","data":[70,80,90]}] }',
+  },
+  heatmap: {
+    render: renderECharts,
+    promptDescription: '- **heatmap** — 2-D intensity matrix; ideal for time × category patterns (e.g. sales by month × territory). Spec: { "type":"heatmap", "title":"...", "xLabels":[...], "yLabels":[...], "data":[[xIdx,yIdx,value],...] }',
+  },
+  treemap: {
+    render: renderECharts,
+    promptDescription: '- **treemap** — nested rectangles for hierarchical part-of-whole (e.g. revenue by category → subcategory). Spec: { "type":"treemap", "title":"...", "data":[{"name":"...","value":123,"children":[{"name":"...","value":60}]}] }',
+  },
+  sunburst: {
+    render: renderECharts,
+    promptDescription: '- **sunburst** — radial hierarchy where each ring is a level (e.g. category → subcategory → product). Spec: { "type":"sunburst", "title":"...", "data":[{"name":"...","value":100,"children":[{"name":"...","value":60}]}] }',
+  },
+  parallel: {
+    render: renderECharts,
+    promptDescription: '- **parallel** — parallel coordinates for comparing entities across many numeric dimensions simultaneously (e.g. products by price, cost, margin, sales volume). Spec: { "type":"parallel", "title":"...", "dimensions":["Dim1","Dim2",...], "data":[{"label":"...","values":[v1,v2,...]}] }',
+  },
+  sankey: {
+    render: renderECharts,
+    promptDescription: '- **sankey** — flow/allocation diagram between nodes (e.g. territory → category → product revenue flow). Spec: { "type":"sankey", "title":"...", "nodes":["A","B","C"], "links":[{"source":"A","target":"B","value":100}] }',
+  },
+  funnel: {
+    render: renderECharts,
+    promptDescription: '- **funnel** — conversion or pipeline stages in descending order. Spec: { "type":"funnel", "title":"...", "data":[{"name":"Stage","value":1000}] }',
+  },
+  graph: {
+    render: renderGraph,
+    promptDescription: '- **graph** — network/relationship diagram with nodes and edges. Set `directed:true` for arrows (directed), omit or set `directed:false` for undirected. Optional `curved:true` for arc edges. Nodes support optional `size` (px) and `color` (hex string). Links support optional `label` (edge text), `color` (hex string, use this to color edges by category/type), and `value` (numeric weight — edge thickness is automatically scaled proportionally; always set this to the connection count or repeat count when available). Spec: { "type":"graph", "title":"...", "directed":true, "layout":"force", "nodes":[{"id":"1","name":"Node A"},{"id":"2","name":"Node B","size":50,"color":"#e05c5c"}], "links":[{"source":"1","target":"2","label":"DDoS","value":5,"color":"#e05c5c"}] }. Node ids in links must exactly match node id values. Use `layout:"circular"` for ring topology instead of force layout. When asked to color edges by type, assign a distinct hex color per type and set it on each link\'s `color` field. Render-side note: nodes sharing identical (partner, label) sets auto-collapse into a diamond ◆ "Group N (k)" node; degree-1 nodes sharing the same single partner auto-collapse into a "Leaves of <hub> (k)" node. Click ◆ to expand; click a red-bordered member to collapse. Legend swatches toggle category visibility.',
+  },
+
+  lineup: {
+    render(wrap, spec) {
+      wrap.classList.add('lineup-wrap');
+      wrap.style.height = wrap.style.height || '520px';
+      wrap._chartSpec = spec;
+      const rows = spec.data || [];
+      if (!rows.length) { wrap.textContent = 'No data'; return; }
+      const colNames = Array.isArray(spec.columns)
+        ? spec.columns.map(c => (typeof c === 'string' ? c : c.name))
+        : Object.keys(rows[0]);
+      const builder = LineUpJS.builder(rows).sidePanel(false);
+      const numColColors = []; // { col, barColor, textColor }
+      let numIdx = 0;
+      colNames.forEach(col => {
+        const sample = rows.find(r => r[col] != null);
+        const isNum = typeof (sample ? sample[col] : null) === 'number';
+        if (isNum) {
+          const barColor = CHART_COLORS[numIdx++ % CHART_COLORS.length];
+          const textColor = contrastColor(barColor);
+          numColColors.push({ col, barColor, textColor });
+          const vals = rows.map(r => +r[col]).filter(v => !isNaN(v));
+          builder.column(
+            LineUpJS.buildNumberColumn(col, [Math.min(...vals), Math.max(...vals)])
+              .color(barColor)
+          );
+        } else {
+          builder.column(LineUpJS.buildStringColumn(col));
+        }
+      });
+      builder.defaultRanking();
+      builder.build(wrap);
+      // Double rAF: wait for layout to commit before LineUp recalculates column widths.
+      // Also inject per-column contrast rules: white text for dark bars, black for light.
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        window.dispatchEvent(new Event('resize'));
+        if (numColColors.length) {
+          const css = numColColors.map(({ col, textColor }) => {
+            const sel = `.lu-c-${CSS.escape(col)},.lu-c-${CSS.escape(col.toLowerCase())}`;
+            return `${sel} { color: ${textColor} !important; }\n` +
+                   `${sel} *:not(svg):not(svg *) { color: ${textColor} !important; }`;
+          }).join('\n');
+          const style = document.createElement('style');
+          style.textContent = css;
+          wrap.appendChild(style);
+        }
+      }));
+    },
+    promptDescription: '- **lineup** — interactive ranking table that renders inline bar glyphs inside each cell and lets users sort/stack columns by weight. Best when comparing many entities across multiple numeric KPIs simultaneously. **Always use lazy SQL** — never inline data. Spec: { "type":"lineup", "title":"...", "columns":["name","revenue","cost"], "sql":"SELECT name, revenue, cost FROM ..." }',
+  },
+
+  // ── Plotly types ──────────────────────────────────────────────────────────
+  box: {
+    render: renderPlotly,
+    promptDescription: '- **box** — box-and-whisker plot; shows median, IQR, and outliers per category. Best for comparing value distributions across groups (e.g. list price spread by product category). **Always use lazy SQL** — rows must have `label` and `value` columns. Spec: { "type":"box", "title":"...", "yLabel":"...", "sql":"SELECT category AS label, listprice AS value FROM ..." }',
+  },
+  violin: {
+    render: renderPlotly,
+    promptDescription: '- **violin** — violin plot; like a box plot but also shows the density shape of the distribution. Prefer over box when sample size is large enough to reveal distribution shape. **Always use lazy SQL**. Same column aliases as box. Spec: { "type":"violin", "title":"...", "yLabel":"...", "sql":"SELECT category AS label, listprice AS value FROM ..." }',
+  },
+  waterfall: {
+    render: renderPlotly,
+    promptDescription: '- **waterfall** — shows the cumulative effect of sequential incremental values (e.g. month-over-month revenue change, cost breakdown). Use `"measure":"total"` for the final bar. Spec: { "type":"waterfall", "title":"...", "xLabel":"...", "yLabel":"...", "labels":["Opening","Jan","Feb","Closing"], "values":[1000000,200000,-80000,1120000], "measure":["absolute","relative","relative","total"] }',
+  },
+  candlestick: {
+    render: renderPlotly,
+    promptDescription: '- **candlestick** — OHLC price chart for financial or price-range data over time periods. Spec: { "type":"candlestick", "title":"...", "data":[{"x":"2023-Q1","open":10.50,"high":15.00,"low":8.20,"close":12.80}] }',
+  },
+
+  // ── ApexCharts types ──────────────────────────────────────────────────────
+  timeline: {
+    render: renderApexCharts,
+    promptDescription: '- **timeline** — horizontal Gantt chart; each row is a named task with a start and end date, coloured by group/category. Best for order lifecycles, project phases, shipping windows, employee tenure. **Always use lazy SQL** — rows must have `label`, `start`, `end`, and `group` columns. Spec: { "type":"timeline", "title":"...", "sql":"SELECT salesorderid::text AS label, orderdate AS start, shipdate AS end, status AS group FROM sales.salesorderheader WHERE shipdate IS NOT NULL" }',
+  },
+  rangebar: {
+    render: renderApexCharts,
+    promptDescription: '- **rangebar** — horizontal bar spanning a numeric range (min–max) per category. Best for price bands by category, salary ranges by job title, or any per-group spread comparison. Spec: { "type":"rangebar", "title":"...", "xLabel":"Price ($)", "data":[{"label":"Bikes","min":200,"max":3578},{"label":"Components","min":2,"max":1432}] }',
+  },
+  rangearea: {
+    render: renderApexCharts,
+    promptDescription: '- **rangearea** — shaded band between two values over a shared x-axis (time or ordered categories). Best for monthly min/max revenue bands, forecast confidence intervals, or price floor/ceiling trends. Spec: { "type":"rangearea", "title":"...", "xLabel":"Month", "yLabel":"Revenue ($)", "seriesLabel":"Revenue Range", "labels":["Jan","Feb","Mar"], "low":[80000,95000,72000], "high":[240000,275000,210000] }',
+  },
+
+  // ── Dynet3D ───────────────────────────────────────────────────────────────
+  dynet3d: {
+    render: renderDynet3D,
+    promptDescription: '- **dynet3d** — 3D dynamic-network visualization. Each time step renders as a parallel 2D network plane stacked along the z-axis; same-id nodes are connected across slices to form entity timelines. Drag to orbit, scroll to zoom; "Reset to Front view" collapses to a single 2D network and "Side view" tilts to expose the time axis. Best for showing how a network evolves over time (users ↔ resources, hosts ↔ services, accounts ↔ products by month, attacker IPs ↔ victims by day). **Always use lazy SQL** for non-trivial datasets — return one row per (time, source, target) edge. Recognised columns: `time` (or `period`/`date`/`day`/`month`/`year`/`step`), `source` (or `src`/`from`/`user`/`src_ip`), `target` (or `destination`/`dst`/`to`/`job`/`dst_ip`), optional `value`/`count`, optional `category`/`type`/`attack_type` (for link color), optional `source_type`/`target_type` (controls node type → defaults coloring and the "Visualizing" filter dropdown). Spec (lazy SQL form): { "type":"dynet3d", "title":"...", "sql":"SELECT day::text AS time, src_ip AS source, dst_ip AS target, attack_type AS category, COUNT(*) AS value FROM events GROUP BY day, src_ip, dst_ip, attack_type ORDER BY day" }. Spec (inline form, only for very small examples): { "type":"dynet3d", "title":"...", "timeLabels":["Jan","Feb"], "nodes":[{"id":"u1","name":"Alice","type":"user","color":"#534AB7"}], "snapshots":[{"time":"Jan","links":[{"source":"u1","target":"r1","value":5}]}] }. `activeNodes` is optional (any node referenced by a link in a snapshot is implicitly active). Control panel lets the user toggle variations, timelines, users vs nodes, labels; switch straight/curved links; adjust link opacity, network expand (z-spacing), and time resolution (aggregation factor); and search by id/name.',
+  },
+};
+
+// ── Chart plugin loader — fetches chart_plugins/*.json from the proxy ────────
+// Each plugin file must have: { type, promptDescription, renderScript }
+// renderScript is a JS function expression string:  "function(wrap, spec) { … }"
+// Plugins are merged into chartRegistry so they work exactly like built-in types.
+async function loadChartPlugins() {
+  const base = API_PROXY_URL.replace('/messages', '');
+  try {
+    const res = await fetch(base + '/chart-plugins');
+    if (!res.ok) return;
+    const { plugins } = await res.json();
+    let loaded = 0;
+    for (const p of (plugins || [])) {
+      if (!p.type || chartRegistry[p.type]) continue; // skip unknowns or collisions
+      try {
+        // eslint-disable-next-line no-new-func
+        const renderFn = new Function('return (' + p.renderScript + ')')();
+        if (typeof renderFn !== 'function') throw new Error('renderScript did not return a function');
+        chartRegistry[p.type] = { render: renderFn, promptDescription: p.promptDescription };
+        loaded++;
+      } catch (e) {
+        console.warn('[chart-plugin] Failed to load plugin "' + p.type + '":', e);
+      }
+    }
+    if (loaded > 0) console.log('[chart-plugin] Loaded ' + loaded + ' plugin(s):', plugins.map(p => p.type).join(', '));
+  } catch (_) {
+    // Proxy not running or endpoint missing — fail silently, built-in types still work
+  }
+}
+
+// ── Builds the Visualization section of the system prompt from the registry ─
+function buildVisualizationPrompt() {
+  const fence = '```';
+  const typeList = Object.values(chartRegistry).map(e => e.promptDescription).join('\n');
+  return '## Visualization Instructions\n' +
+    'After retrieving data, present it visually using a ' + fence + 'chart block. Choose the chart type that best fits the data:\n' +
+    typeList + '\n\n' +
+    'Output format — always valid JSON inside the code fence:\n' +
+    fence + 'chart\n' +
+    '{ "type": "bar", "title": "Descriptive title here", "xLabel": "X axis label", "yLabel": "Y axis label", "labels": ["Label A", "Label B"], "datasets": [{ "label": "Series name", "data": [123, 456] }] }\n' +
+    fence + '\n\n' +
+    'Rules:\n' +
+    '- If the user\'s request **leads with a visualization verb** (create, show, draw, plot, visualize, make, build, generate) and describes a chart or graph — even with detailed specs about colors, axes, or layout — output ONLY the chart block. The extra detail is the chart specification, not a request for explanation. No preamble, no bullet-point findings, no follow-up questions.\n' +
+    '- Otherwise (analytical questions starting with "what", "why", "how", "which", "compare", or requests for insights/summaries), include a brief text explanation before or after the chart and offer 1-2 follow-up questions the user might want to explore next.\n' +
+    '- Do NOT add a LIMIT clause to SQL queries unless the user explicitly requests one. Return all matching rows by default.\n' +
+    '- Lazy data loading: for lineup, timearcs, timearcs-gl, graph, sankey, heatmap, box, violin, timeline, and swimlane charts — ALWAYS embed the SQL as `"sql":"SELECT..."` instead of an inline data array. The browser fetches all rows at render time. **Do NOT add a LIMIT clause** to lazy SQL specs. Use these standard column aliases: timearcs/timearcs-gl/graph/sankey → source, target, value, category; heatmap → x, y, value; box/violin → label, value; timeline → label, start, end, group; swimlane → time, actor, label, message, category (see swimlane prompt for full column list); lineup → exact column names from the SELECT list.\n' +
+    '- For pricing analysis, use grouped bar (two datasets: List Price vs Avg Sale Price).\n' +
+    '- Omit xLabel/yLabel for pie/doughnut/rose/funnel/sunburst/treemap charts.\n' +
+    '- Round monetary values to 2 decimal places in the data array.';
+}
+
+// ── System prompt (built at call-time so buildVisualizationPrompt is ready) ─
+// Schema contexts are loaded from schema_contexts/ (one file per database)
+function getSystemPromptText() {
+  const isAW = currentDatabase === 'AdventureWorks2019';
+  const isNM = currentDatabase === 'NetworkMonitoring';
+  const isHPC = currentDatabase === 'HPCData';
+  const isN90 = currentDatabase === 'Network90MinsData';
+  const isVAST1 = currentDatabase === 'VAST1Data' || currentDatabase === 'VAST1';
+
+  const schemaSection = isAW
+    ? ADVENTUREWORKS_SCHEMA_CONTEXT
+    : isNM
+    ? NETWORK_MONITORING_SCHEMA_CONTEXT
+    : isHPC
+    ? HPCDATA_SCHEMA_CONTEXT
+    : isN90
+    ? NETWORK90MINS_SCHEMA_CONTEXT
+    : isVAST1
+    ? VAST1DATA_SCHEMA_CONTEXT
+    : `You are connected to the "${currentDatabase}" PostgreSQL database.
+You do not have pre-loaded schema knowledge for this database.
+Before answering any analytical question, first run a schema discovery query so you understand what tables and columns are available:
+
+SELECT table_schema, table_name, column_name, data_type
+FROM information_schema.columns
+WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
+ORDER BY table_schema, table_name, ordinal_position;
+
+Use the discovered schema for all subsequent queries.`;
+
+  const awHints = isAW ? `
+5. When showing pricing analysis, always compare standardcost, listprice, and actual unitprice from sales_order_detail.` : '';
+  const nmHints = isNM ? `
+5. For bandwidth queries, use monitoring.bandwidth_metric and group by DATE_TRUNC for time-series analysis.
+6. For alert analysis, join alerts.alert with network.device and inventory.site for full context.
+7. Protocol numbers in traffic_flow: 1=ICMP, 6=TCP, 17=UDP — always translate to names in output.` : '';
+  const hpcHints = isHPC ? `
+5. All timestamp columns (submit_time, start_time, end_time, time) are Unix epoch bigints — ALWAYS wrap with to_timestamp() for display or filtering.
+6. job_state is a JSON array string — filter with: job_state LIKE '%COMPLETED%' or job_state::jsonb->>0 = 'COMPLETED'.
+7. Array/JSON columns (gpu_usage, temperature, cpu_power_consumption, etc.) are text — cast to ::jsonb and use jsonb_array_elements() to unnest.
+8. Join hpc.jobs with hpc.job_details on job_id to correlate power/resource metrics with job metadata (user, state, duration).
+9. For per-node power breakdown, unnest hpc.jobs.data::jsonb using jsonb_array_elements().` : '';
+  const n90Hints = isN90 ? `
+5. net90.traffic_90min.timestamp is DELTA-ENCODED — only row 1 holds an absolute Unix-millisecond epoch; rows 2..N hold the elapsed time since the previous row. NEVER pass it directly to to_timestamp(). Recover absolute times with a window-function running sum (see schema doc).
+6. attack = -1 means benign / "no attack" but IS a real row in net90.event_type_mapping (event_code = -1). Use a plain INNER JOIN to decode all rows including benign — do NOT filter -1 out by default.
+7. src_ip and dst_ip are integer IDs — JOIN net90.ip_map ON ip_id = src_ip (or dst_ip) to get dotted-quad IPv4 addresses.
+8. attack column joins to net90.event_type_mapping ON event_code = attack to get the event_type label.
+9. protocol is the IANA protocol number — translate 1=ICMP, 6=TCP, 17=UDP for human-readable output.
+10. The dataset covers a single 90-minute capture; per-day / per-month aggregations are not meaningful.` : '';
+  const vast1Hints = isVAST1 ? `
+5. Use schema-qualified names (mc1.communications, mc1.participants, mc1.rounds) in all queries.
+6. round_id is the main logical join key across all three tables; for participant-level messaging use JOIN on (round_id, agent_id).
+7. timestamp and hour are text columns storing ISO-like date-times — cast with ::timestamp before date_trunc, interval math, or ordering by time.
+8. recipients, internal_state, environment_context, and agent_round_metadata are text payloads that may be JSON; cast to ::jsonb only when valid.
+9. To reconstruct conversation threads, self-join mc1.communications with responding_to = message_id and preserve round/message_index order.` : '';
+
+  return `You are an expert SQL analyst and data consultant connected to the LIVE "${currentDatabase}" PostgreSQL database.
+
+## CRITICAL RULE — READ FIRST
+You have a \`query_database\` tool. You MUST call it before answering ANY analytical question.
+Do NOT answer from memory or training data — the numbers in your training may differ from this live instance.
+Every factual claim about data (counts, prices, revenue, rankings, averages) requires a tool call first.
+If you are tempted to answer without calling the tool, stop and call it instead.
+
+${schemaSection}
+
+## How to respond
+
+If the user's request **leads with a visualization verb** (create, show, draw, plot, visualize, make, build, generate) and describes a chart, graph, or diagram: run the query, output ONLY the chart block, nothing else — no explanation, no bullet-point findings, no follow-up questions. Extra detail in the request (colors, layout, filtering criteria) is the chart specification, not a request for narrative.
+
+Otherwise:
+1. Answer the business question first in plain English — what the data means, what action to take.
+2. Then provide the SQL query used to retrieve this data.
+3. If the question implies a comparison, flag anomalies, or suggest follow-up analysis.
+4. Format SQL cleanly with aliases. Use CTEs for complex queries.${awHints}${nmHints}${hpcHints}${n90Hints}${vast1Hints}
+5. Keep responses focused. Lead with the insight, back it up with SQL.
+6. If asked about data you cannot confirm without running the query, say so and provide the query to find out.
+
+## Tool Use
+You have access to a \`query_database\` tool that executes real SQL queries against the "${currentDatabase}" PostgreSQL database. ALWAYS use it to fetch real data before answering analytical questions. Never guess or make up numbers.
+
+${buildVisualizationPrompt()}`;
+}
+
+// ── Lazy SQL chart support ───────────────────────────────────────────────────
+// When a chart spec contains a "sql" field the browser fetches the rows itself
+// via POST /query, then maps them into the chart-specific data shape.
+
+function mergeRowsIntoSpec(spec, rows) {
+  if (!rows.length) return spec;
+  const s = Object.assign({}, spec);
+  delete s.sql;
+  // Pick the first defined value from a row using several candidate column names
+  const pick = (row, ...names) => {
+    for (const n of names) if (row[n] !== undefined && row[n] !== null) return row[n];
+    return undefined;
+  };
+  const type = spec.type;
+  if (type === 'timearcs' || type === 'timearcs-gl') {
+    s.events = rows.map(r => ({
+      year:     pick(r, 'year', 'Year', 'yr'),
+      source:   pick(r, 'source', 'Source', 'src', 'source_ip'),
+      target:   pick(r, 'target', 'Target', 'destination', 'Destination', 'dst', 'dest'),
+      category: pick(r, 'category', 'Category', 'event_type', 'type', 'Type') || '',
+      value:  +(pick(r, 'value', 'Value', 'count', 'Count', 'cnt', 'weight') ?? 1),
+      label:    pick(r, 'label', 'Label') || '',
+    }));
+  } else if (type === 'graph') {
+    const nodeIds = [...new Set(rows.flatMap(r => [
+      pick(r, 'source', 'src'),
+      pick(r, 'target', 'destination', 'dst', 'dest'),
+    ].filter(Boolean)))];
+    s.nodes = s.nodes || nodeIds.map(id => ({ id, name: id }));
+    s.links = rows.map(r => ({
+      source: pick(r, 'source', 'src'),
+      target: pick(r, 'target', 'destination', 'dst', 'dest'),
+      value:  +(pick(r, 'value', 'count', 'cnt', 'weight') ?? 1),
+      label:  pick(r, 'label', 'category', 'event_type', 'type') || undefined,
+      color:  pick(r, 'color') || undefined,
+    }));
+  } else if (type === 'sankey') {
+    const nodes = [...new Set(rows.flatMap(r =>
+      [pick(r, 'source', 'src'), pick(r, 'target', 'destination', 'dst')].filter(Boolean)
+    ))];
+    s.nodes = s.nodes || nodes;
+    s.links = rows.map(r => ({
+      source: pick(r, 'source', 'src'),
+      target: pick(r, 'target', 'destination', 'dst'),
+      value:  +(pick(r, 'value', 'count', 'cnt') ?? 1),
+    }));
+  } else if (type === 'heatmap') {
+    const xs = s.xLabels || [...new Set(rows.map(r => pick(r, 'x', 'x_label', 'col', 'column')))];
+    const ys = s.yLabels || [...new Set(rows.map(r => pick(r, 'y', 'y_label', 'row')))];
+    s.xLabels = xs; s.yLabels = ys;
+    s.data = rows.map(r => [
+      xs.indexOf(pick(r, 'x', 'x_label', 'col', 'column')),
+      ys.indexOf(pick(r, 'y', 'y_label', 'row')),
+      +(pick(r, 'value', 'count', 'cnt') ?? 0),
+    ]);
+  } else if (type === 'bar' || type === 'line') {
+    const hasSeries = rows.some(r => pick(r, 'series', 'group') !== undefined);
+    const labels = [...new Set(rows.map(r => pick(r, 'label', 'name', 'x', 'category')))];
+    s.labels = s.labels || labels;
+    if (hasSeries) {
+      const seriesVals = [...new Set(rows.map(r => pick(r, 'series', 'group')))];
+      s.datasets = seriesVals.map(sv => ({
+        label: sv,
+        data: labels.map(lv => {
+          const row = rows.find(r =>
+            pick(r, 'label', 'name', 'x', 'category') === lv && pick(r, 'series', 'group') === sv
+          );
+          return row ? +(pick(row, 'value', 'count', 'y') ?? 0) : 0;
+        }),
+      }));
+    } else {
+      s.datasets = s.datasets || [{ label: s.yLabel || 'Value', data: rows.map(r => +(pick(r, 'value', 'count', 'y') ?? 0)) }];
+    }
+  } else if (['pie', 'doughnut', 'rose', 'funnel'].includes(type)) {
+    s.data = rows.map(r => ({ name: pick(r, 'name', 'label', 'category', 'group') || '', value: +(pick(r, 'value', 'count', 'cnt') ?? 0) }));
+  } else if (type === 'lineup') {
+    s.data = rows;
+    if (!s.columns) s.columns = rows.length ? Object.keys(rows[0]) : [];
+  } else if (type === 'box' || type === 'violin') {
+    const groups = new Map();
+    rows.forEach(r => {
+      const lbl = pick(r, 'label', 'name', 'category', 'group') || 'Value';
+      const val = pick(r, 'value', 'y', 'amount', 'price', 'count', 'cnt');
+      if (val != null) {
+        if (!groups.has(lbl)) groups.set(lbl, []);
+        groups.get(lbl).push(+val);
+      }
+    });
+    s.data = Array.from(groups, ([label, values]) => ({ label, values }));
+  } else if (type === 'timeline') {
+    s.data = rows.map(r => ({
+      label:    pick(r, 'label', 'name', 'task', 'id') || '',
+      start:    pick(r, 'start', 'start_date', 'startdate', 'begin', 'orderdate') || '',
+      end:      pick(r, 'end',   'end_date',   'enddate',   'finish', 'shipdate')  || '',
+      group:    pick(r, 'group', 'category', 'status', 'phase') || 'Task',
+    })).filter(d => d.start && d.end);
+  } else if (type === 'crossset') {
+    s.rows = rows.map(r => ({
+      row_group: pick(r, 'row_group', 'rowGroup', 'rg') ?? '(none)',
+      row_label: pick(r, 'row_label', 'rowLabel', 'rl') ?? '',
+      col_group: pick(r, 'col_group', 'colGroup', 'cg') ?? '(none)',
+      col_label: pick(r, 'col_label', 'colLabel', 'cl') ?? '',
+      value:    +(pick(r, 'value', 'val', 'count', 'cnt') ?? 0),
+    }));
+  } else if (type === 'pad') {
+    s.links = rows.map(r => ({
+      src:   pick(r, 'src', 'source', 'customer', 'from', 'entity_a'),
+      tgt:   pick(r, 'tgt', 'target', 'product', 'to', 'entity_b'),
+      ts:    pick(r, 'ts', 'year', 'time', 'period', 'date'),
+      value: +(pick(r, 'value', 'count', 'cnt', 'weight') ?? 1),
+    }));
+  } else if (type === 'timelighting') {
+    s.events = rows.map(r => ({
+      source:   pick(r, 'source', 'Source', 'src', 'from', 'entity_a'),
+      target:   pick(r, 'target', 'Target', 'destination', 'dst', 'to', 'entity_b'),
+      time:     pick(r, 'time', 'Time', 'year', 'Year', 'yr', 'period'),
+      category: pick(r, 'category', 'Category', 'type', 'Type', 'event_type') || '',
+      value:  +(pick(r, 'value', 'Value', 'count', 'Count', 'cnt', 'weight') ?? 1),
+    }));
+  } else if (type === 'dynet3d') {
+    // Rows shape: { time, source, target, value?, category?/type?/label?, source_type?, target_type?, source_color?, target_color? }
+    const timeSet = new Map();  // time -> insertion order
+    const snapshotMap = new Map();  // time -> { activeNodes:Set, links:[] }
+    const nodeMap = new Map();  // id -> { id, name, type?, color? }
+    let order = 0;
+    rows.forEach(r => {
+      const time = String(pick(r, 'time', 'Time', 'period', 'date', 'day', 'month', 'year', 'yr', 'step', 't') ?? '');
+      const src  = pick(r, 'source', 'Source', 'src', 'from', 'entity_a', 'user', 'user_id', 'src_ip');
+      const tgt  = pick(r, 'target', 'Target', 'destination', 'dst', 'dest', 'to', 'entity_b', 'job', 'job_id', 'dst_ip');
+      if (src == null || tgt == null) return;
+      const sId = String(src), tId = String(tgt);
+      if (!timeSet.has(time)) { timeSet.set(time, order++); snapshotMap.set(time, { activeNodes: new Set(), links: [] }); }
+      const snap = snapshotMap.get(time);
+      snap.activeNodes.add(sId);
+      snap.activeNodes.add(tId);
+      const linkType  = pick(r, 'category', 'Category', 'type', 'Type', 'event_type', 'attack_type', 'label');
+      const linkColor = pick(r, 'color', 'link_color');
+      const value = +(pick(r, 'value', 'Value', 'count', 'Count', 'cnt', 'weight') ?? 1);
+      snap.links.push({
+        source: sId, target: tId, value,
+        ...(linkType  ? { type:  String(linkType)  } : {}),
+        ...(linkColor ? { color: String(linkColor) } : {}),
+      });
+      if (!nodeMap.has(sId)) {
+        const st = pick(r, 'source_type', 'src_type', 'srcType');
+        const sc = pick(r, 'source_color', 'src_color');
+        nodeMap.set(sId, { id: sId, name: pick(r, 'source_name') || sId, ...(st ? { type: String(st) } : {}), ...(sc ? { color: String(sc) } : {}) });
+      }
+      if (!nodeMap.has(tId)) {
+        const tt = pick(r, 'target_type', 'dst_type', 'dest_type', 'tgtType');
+        const tc = pick(r, 'target_color', 'dst_color');
+        nodeMap.set(tId, { id: tId, name: pick(r, 'target_name') || tId, ...(tt ? { type: String(tt) } : {}), ...(tc ? { color: String(tc) } : {}) });
+      }
+    });
+    // Sort times — try numeric, then date, then natural string
+    const times = [...timeSet.keys()].sort((a, b) => {
+      const na = +a, nb = +b;
+      if (!isNaN(na) && !isNaN(nb)) return na - nb;
+      const da = Date.parse(a), db = Date.parse(b);
+      if (!isNaN(da) && !isNaN(db)) return da - db;
+      return a < b ? -1 : a > b ? 1 : 0;
+    });
+    s.nodes = s.nodes || [...nodeMap.values()];
+    s.snapshots = times.map(t => {
+      const snap = snapshotMap.get(t);
+      return { time: t, activeNodes: [...snap.activeNodes], links: snap.links };
+    });
+    s.timeLabels = s.timeLabels || times;
+  } else if (type === 'aardvark') {
+    s.rows = rows.map(r => ({
+      root:   String(pick(r, 'root', 'category', 'l1', 'group1') ?? '(root)'),
+      branch: pick(r, 'branch', 'subcategory', 'l2', 'group2') != null
+                ? String(pick(r, 'branch', 'subcategory', 'l2', 'group2'))
+                : null,
+      leaf:   String(pick(r, 'leaf', 'item', 'name', 'l3', 'group3') ?? '(leaf)'),
+      period: String(pick(r, 'period', 'month', 'quarter', 'year', 'date', 'time') ?? ''),
+      value:  +(pick(r, 'value', 'amount', 'revenue', 'count', 'cnt') ?? 0),
+    }));
+  } else if (type === 'swimlane') {
+    s.rows = rows.map(r => ({
+      time:     pick(r, 'time', 'Time', 'timestamp', 'event_time', 'when', 'date', 'datetime'),
+      actor:    pick(r, 'actor', 'Actor', 'lane', 'role', 'agent_role', 'group', 'team', 'department'),
+      label:    pick(r, 'label', 'Label', 'event', 'short_event', 'event_short', 'name', 'title') ?? '',
+      message:  pick(r, 'message', 'Message', 'content', 'description', 'text', 'detail', 'body') ?? '',
+      category: pick(r, 'category', 'Category', 'event_category', 'type', 'event_type', 'kind') ?? '',
+      value:    +(pick(r, 'value', 'Value', 'weight', 'count', 'importance', 'cnt') ?? 1),
+      event_id: pick(r, 'event_id', 'eventId', 'id'),
+      cause_id: pick(r, 'cause_id', 'causeId', 'parent_id', 'prev_id', 'caused_by'),
+    }));
+  }
+  return s;
+}
+
+async function resolveChartSpec(spec) {
+  if (!spec.sql) return spec;
+  const base = API_PROXY_URL.replace('/messages', '');
+  const res = await fetch(base + '/query', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sql: spec.sql, database: currentDatabase }),
+  });
+  if (!res.ok) throw new Error('Query fetch failed: HTTP ' + res.status);
+  const result = await res.json();
+  if (result.error) throw new Error('Query error: ' + result.error);
+  return mergeRowsIntoSpec(spec, result.rows || []);
+}
+
+// ── Chart initialiser — uses registry to dispatch to the right renderer ─────
+function initCharts(container) {
+  container.querySelectorAll('[data-chart]').forEach(el => {
+    const rawSpec = JSON.parse(el.getAttribute('data-chart'));
+    const frame = document.createElement('div');
+    frame.className = 'chart-frame';
+    const wrap = document.createElement('div');
+    wrap.className = 'chart-wrap';
+    frame.appendChild(wrap);
+    el.replaceWith(frame);
+    if (rawSpec.sql) {
+      wrap.style.cssText = 'padding:20px;color:#888;font-size:13px';
+      wrap.textContent = 'Loading data…';
+    }
+    (async () => {
+      try {
+        const spec = await resolveChartSpec(rawSpec);
+        const entry = chartRegistry[spec.type];
+        if (!entry) throw new Error('Unknown chart type: "' + spec.type + '"');
+        wrap.style.cssText = '';
+        wrap.textContent = '';
+        entry.render(wrap, spec);
+        const anchor = document.createElement('div');
+        anchor.className = 'chart-expand-anchor';
+        const btn = document.createElement('button');
+        btn.className = 'chart-expand-btn';
+        btn.title = 'View enlarged';
+        btn.innerHTML = '<svg viewBox="0 0 16 16"><path d="M10 2h4v4M14 2l-6 6M6 14H2v-4M2 14l6-6"/></svg>';
+        btn.onclick = () => openChartModal(spec);
+        anchor.appendChild(btn);
+        frame.insertBefore(anchor, frame.firstChild);
+      } catch (e) {
+        const errEl = document.createElement('pre');
+        errEl.style.color = 'var(--danger-text)';
+        errEl.textContent = 'Chart error: ' + String(e);
+        frame.replaceWith(errEl);
+      }
+    })();
+  });
+}
+
+async function openChartModal(spec) {
+  const backdrop = document.getElementById('chartModalBackdrop');
+  const body = document.getElementById('chartModalBody');
+  document.getElementById('chartModalTitle').textContent = spec.title || '';
+  body.querySelectorAll('*').forEach(el => {
+    const ec = echarts.getInstanceByDom(el);
+    if (ec) ec.dispose();
+  });
+  body.innerHTML = '';
+  const wrap = document.createElement('div');
+  wrap.style.width = '100%';
+  wrap.style.height = '100%';
+  wrap.style.background = '#ffffff';
+  body.appendChild(wrap);
+  backdrop.classList.add('open');
+  try {
+    const resolved = await resolveChartSpec(spec);
+    const entry = chartRegistry[resolved.type];
+    if (entry) entry.render(wrap, resolved);
+    requestAnimationFrame(() => {
+      const ec = echarts.getInstanceByDom(wrap);
+      if (ec) ec.resize();
+    });
+  } catch (e) {
+    wrap.style.cssText = 'padding:20px;color:#888';
+    wrap.textContent = 'Chart error: ' + e;
+  }
+}
+
+function closeChartModal() {
+  const body = document.getElementById('chartModalBody');
+  body.querySelectorAll('*').forEach(el => {
+    const ec = echarts.getInstanceByDom(el);
+    if (ec) ec.dispose();
+  });
+  body.innerHTML = '';
+  document.getElementById('chartModalBackdrop').classList.remove('open');
+}
+
+// Restore the most recent session on page load, or show the welcome message
+(function initHistory() {
+  const saved = getSessions();
+  if (saved.length) {
+    const last = saved[0];
+    currentSessionId = last.id;
+    last.messages.forEach(m => messages.push({ role: m.role, content: m.content, queries: m.queries || [] }));
+    const msgsEl = document.getElementById('messages');
+    msgsEl.innerHTML = '';
+    for (const m of messages) {
+      if (m.role === 'user') appendMessage('user', '<p>' + escHtml(m.content) + '</p>');
+      else {
+        const div = appendMessage('ai', formatResponse(m.content) + buildSqlToggleHtml(m.queries || []));
+        initCharts(div);
+      }
+    }
+  } else {
+    renderWelcomeMessage();
+  }
+  renderHistoryList();
+  loadDatabases();
+  loadChartPlugins();
+})();
+
+if (window.location.protocol === 'file:') {
+  appendMessage(
+    'ai',
+    '<div class="insight-card warn">This page is opened as a local file. Browser security blocks direct calls to Anthropic from here. Start the local proxy and keep this endpoint reachable: <code style="font-family:var(--mono);font-size:12px;background:var(--bg3);padding:1px 5px;border-radius:3px">' + API_PROXY_URL + '</code></div>'
+  );
+}
+
+function toggleCols(el, id) {
+  const cols = document.getElementById(id);
+  cols.classList.toggle('open');
+  el.classList.toggle('active');
+}
+
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+}
+
+function handleKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+}
+
+function sendChip(el) {
+  document.getElementById('input').value = el.textContent;
+  sendMessage();
+}
+
+function appendMessage(role, html) {
+  const msgs = document.getElementById('messages');
+  const div = document.createElement('div');
+  div.className = 'msg' + (role === 'user' ? ' user' : '');
+  const initials = role === 'user' ? 'You' : getDbInitials(currentDatabase);
+  div.innerHTML = '<div class="avatar ' + role + '">' + initials + '</div><div class="bubble ' + role + '">' + html + '</div>';
+  msgs.appendChild(div);
+  const bubble = div.querySelector('.bubble');
+  if (bubble) initCharts(bubble);
+  msgs.scrollTop = msgs.scrollHeight;
+  return div;
+}
+
+function formatResponse(text) {
+  let html = text;
+
+  // 1. Extract ```chart blocks → placeholder divs with data-chart attribute
+  const chartBlocks = [];
+  html = html.replace(/```chart\s*([\s\S]*?)```/gi, (_, raw) => {
+    const idx = chartBlocks.length;
+    try {
+      JSON.parse(raw.trim()); // validate JSON
+      chartBlocks.push(raw.trim());
+      return '%%CHART' + idx + '%%';
+    } catch (e) {
+      return '<pre>' + escHtml(raw.trim()) + '</pre>';
+    }
+  });
+
+  // 2. Extract ```sql blocks
+  const sqlBlocks = [];
+  html = html.replace(/```sql([\s\S]*?)```/gi, (_, code) => {
+    const idx = sqlBlocks.length;
+    sqlBlocks.push('<pre>' + escHtml(code.trim()) + '</pre>');
+    return '%%SQL' + idx + '%%';
+  });
+
+  // 3. Remaining fenced code blocks
+  html = html.replace(/```[\w]*([\s\S]*?)```/g, (_, code) => '<pre>' + escHtml(code.trim()) + '</pre>');
+
+  // 4. Inline markdown
+  html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+  html = html.replace(/`([^`]+)`/g, '<code style="font-family:var(--mono);font-size:12px;background:var(--bg3);padding:1px 5px;border-radius:3px">$1</code>');
+
+  // 4b. Markdown tables → HTML tables
+  html = html.replace(/((?:[ \t]*\|[^\n]+\n){2,}[ \t]*\|[^\n]+)/g, (match) => {
+    const rows = match.trim().split('\n').map(l => l.trim()).filter(l => l);
+    if (rows.length < 2) return match;
+    if (!/^\|[-|: ]+\|$/.test(rows[1])) return match;
+    const parseRow = l => l.split('|').slice(1, -1).map(c => c.trim());
+    const headers = parseRow(rows[0]);
+    const dataRows = rows.slice(2).map(parseRow);
+    let t = '<table><thead><tr>' + headers.map(h => '<th>' + h + '</th>').join('') + '</tr></thead><tbody>';
+    dataRows.forEach(r => { t += '<tr>' + r.map(c => '<td>' + c + '</td>').join('') + '</tr>'; });
+    return t + '</tbody></table>';
+  });
+
+  // 5. Lines → paragraphs / lists / headings
+  const lines = html.split('\n');
+  let out = '', inList = false;
+  for (const line of lines) {
+    if (line.startsWith('- ') || line.startsWith('* ')) {
+      if (!inList) { out += '<ul style="margin:6px 0 6px 16px;list-style:disc">'; inList = true; }
+      out += '<li style="margin:2px 0">' + line.slice(2) + '</li>';
+    } else {
+      if (inList) { out += '</ul>'; inList = false; }
+      const t = line.trim();
+      if (t.startsWith('### ')) out += '<p style="font-weight:600;font-size:13px;margin:10px 0 3px;color:var(--text2)">' + t.replace(/^###\s*/, '') + '</p>';
+      else if (t.startsWith('## ')) out += '<p style="font-weight:500;font-size:14px;margin:12px 0 4px">' + t.replace(/^##\s*/, '') + '</p>';
+      else if (t.startsWith('# '))  out += '<p style="font-weight:600;font-size:15px;margin:14px 0 5px">' + t.replace(/^#\s*/, '') + '</p>';
+      else if (t.startsWith('<table') || t.startsWith('<pre') || t.startsWith('<div') || t.startsWith('%%')) out += t;
+      else if (t) out += '<p>' + t + '</p>';
+    }
+  }
+  if (inList) out += '</ul>';
+
+  // 6. Restore SQL blocks
+  sqlBlocks.forEach((blk, i) => { out = out.replace('%%SQL' + i + '%%', blk); });
+
+  // 7. Restore chart blocks as placeholder divs (rendered after DOM insertion)
+  chartBlocks.forEach((spec, i) => {
+    const safeSpec = spec.replace(/"/g, '&quot;');
+    out = out.replace(
+      '%%CHART' + i + '%%',
+      '<div data-chart="' + safeSpec + '"></div>'
+    );
+  });
+
+  return out;
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function buildSqlToggleHtml(queries) {
+  if (!queries || queries.length === 0) return '';
+  const countLabel = queries.length === 1 ? '1 query' : `${queries.length} queries`;
+  const blocks = queries.map(q => {
+    const meta = [q.description, typeof q.row_count === 'number' ? `${q.row_count} rows returned` : '']
+      .filter(Boolean).join(' · ');
+    return `<div class="sql-query-block">${meta ? `<div class="sql-query-meta">${escHtml(meta)}</div>` : ''}<pre>${escHtml(q.sql)}</pre></div>`;
+  }).join('');
+  return `<div class="sql-toggle">
+    <button onclick="this.closest('.sql-toggle').classList.toggle('open')">
+      <svg viewBox="0 0 16 16"><path d="M3 4h10M3 8h7M3 12h5"/></svg>
+      SQL used &mdash; ${escHtml(countLabel)}
+      <svg class="sql-chevron" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4"/></svg>
+    </button>
+    <div class="sql-panel">${blocks}</div>
+  </div>`;
+}
+
+// ── Chat history (localStorage) ─────────────────────────────────────────────
+const SESSIONS_KEY = 'aw_chat_sessions';
+let currentSessionId = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
+function getSessions() {
+  try { return JSON.parse(localStorage.getItem(SESSIONS_KEY) || '[]'); } catch { return []; }
+}
+
+function setSessions(s) {
+  try { localStorage.setItem(SESSIONS_KEY, JSON.stringify(s)); } catch {}
+}
+
+function saveCurrentSession() {
+  const userMsgs = messages.filter(m => m.role === 'user');
+  if (!userMsgs.length) return;
+  const title = userMsgs[0].content.slice(0, 60) + (userMsgs[0].content.length > 60 ? '…' : '');
+  const sessions = getSessions();
+  const idx = sessions.findIndex(s => s.id === currentSessionId);
+  const session = { id: currentSessionId, title, updatedAt: new Date().toISOString(), messages: messages.map(m => ({ role: m.role, content: m.content, queries: m.queries || [] })) };
+  if (idx >= 0) sessions[idx] = session; else sessions.unshift(session);
+  setSessions(sessions);
+  renderHistoryList();
+}
+
+function loadSession(id) {
+  if (id === currentSessionId) return;
+  saveCurrentSession();
+  const session = getSessions().find(s => s.id === id);
+  if (!session) return;
+  currentSessionId = id;
+  messages.length = 0;
+  session.messages.forEach(m => messages.push({ role: m.role, content: m.content, queries: m.queries || [] }));
+  const msgsEl = document.getElementById('messages');
+  msgsEl.innerHTML = '';
+  for (const m of messages) {
+    if (m.role === 'user') appendMessage('user', '<p>' + escHtml(m.content) + '</p>');
+    else {
+      const div = appendMessage('ai', formatResponse(m.content) + buildSqlToggleHtml(m.queries || []));
+      initCharts(div);
+    }
+  }
+  renderHistoryList();
+}
+
+function newChat() {
+  saveCurrentSession();
+  currentSessionId = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  messages.length = 0;
+  document.getElementById('messages').innerHTML = '';
+  renderWelcomeMessage();
+  renderHistoryList();
+  document.getElementById('input').focus();
+}
+
+function deleteSession(id, event) {
+  event.stopPropagation();
+  const sessions = getSessions().filter(s => s.id !== id);
+  setSessions(sessions);
+  if (id === currentSessionId) newChat(); else renderHistoryList();
+}
+
+function renderHistoryList() {
+  const list = document.getElementById('history-list');
+  if (!list) return;
+  const sessions = getSessions();
+  if (!sessions.length) {
+    list.innerHTML = '<div class="history-empty">No saved chats yet.<br>Start a conversation to save it here.</div>';
+    return;
+  }
+  list.innerHTML = sessions.map(s => {
+    const active = s.id === currentSessionId ? ' active' : '';
+    const date = relativeDate(s.updatedAt);
+    return `<div class="history-item${active}" onclick="loadSession('${s.id}')">
+      <div class="history-title">${escHtml(s.title)}</div>
+      <div class="history-meta">
+        <span class="history-date">${date}</span>
+        <button class="history-del" onclick="deleteSession('${s.id}',event)" title="Delete">×</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function relativeDate(iso) {
+  const diff = Date.now() - new Date(iso).getTime();
+  if (diff < 60000) return 'just now';
+  if (diff < 3600000) return Math.floor(diff / 60000) + 'm ago';
+  if (diff < 86400000) return Math.floor(diff / 3600000) + 'h ago';
+  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function renderWelcomeMessage() {
+  const msgs = document.getElementById('messages');
+  const div = document.createElement('div');
+  div.className = 'msg';
+  const initials = getDbInitials(currentDatabase);
+  const isAW = currentDatabase === 'AdventureWorks2019';
+  if (isAW) {
+    div.innerHTML = `<div class="avatar ai">${initials}</div><div class="bubble ai">
+      <p>Hi! I'm your AdventureWorks data assistant. I have full knowledge of the database schema — including Sales, Production, HR, and Person tables — so you can ask me anything without setting up a prompt.</p>
+      <p>Try one of these to get started:</p>
+      <div class="chip-row">
+        <span class="chip" onclick="sendChip(this)">Which items could be priced higher?</span>
+        <span class="chip" onclick="sendChip(this)">Top 10 products by revenue last year</span>
+        <span class="chip" onclick="sendChip(this)">Which territories are underperforming?</span>
+        <span class="chip" onclick="sendChip(this)">Customers with highest lifetime value</span>
+        <span class="chip" onclick="sendChip(this)">Products selling below cost</span>
+        <span class="chip" onclick="sendChip(this)">Average discount by product category</span>
+      </div>
+    </div>`;
+  } else {
+    div.innerHTML = `<div class="avatar ai">${initials}</div><div class="bubble ai">
+      <p>Hi! I'm connected to the <strong>${escHtml(currentDatabase)}</strong> database. I'll explore the schema automatically when you ask your first question.</p>
+      <p>Try one of these to get started:</p>
+      <div class="chip-row">
+        <span class="chip" onclick="sendChip(this)">What tables are in this database?</span>
+        <span class="chip" onclick="sendChip(this)">Show me a summary of the data</span>
+        <span class="chip" onclick="sendChip(this)">What are the most recent records?</span>
+        <span class="chip" onclick="sendChip(this)">How many rows are in each table?</span>
+      </div>
+    </div>`;
+  }
+  msgs.appendChild(div);
+}
+
+async function sendMessage() {
+  if (isLoading) return;
+  const input = document.getElementById('input');
+  const text = input.value.trim();
+  if (!text) return;
+
+  input.value = '';
+  input.style.height = 'auto';
+  appendMessage('user', '<p>' + escHtml(text) + '</p>');
+  messages.push({ role: 'user', content: text });
+
+  isLoading = true;
+  document.getElementById('send-btn').disabled = true;
+
+  const typingDiv = appendMessage('ai', '<div class="typing"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>');
+
+  try {
+    const res = await fetch(API_PROXY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 10000,
+        database: currentDatabase,
+        // System as array enables Anthropic prompt caching — the large schema block
+        // is cached after the first request and not re-billed for ~5 min.
+        system: [{ type: 'text', text: getSystemPromptText(), cache_control: { type: 'ephemeral' } }],
+        messages: messages.slice(-10).map(m => ({ role: m.role, content: m.content }))
+      })
+    });
+
+    if (!res.ok) {
+      let errMsg = 'HTTP ' + res.status;
+      try {
+        const errJson = await res.json();
+        errMsg = errJson.error?.message || errJson.error || errMsg;
+      } catch (_) {
+        const errText = await res.text();
+        if (errText) errMsg = errText;
+      }
+      throw new Error(errMsg);
+    }
+
+    const data = await res.json();
+    const textBlocks = (data.content || []).filter(b => b.type === 'text' && b.text);
+    const reply = textBlocks.map(b => b.text).join('') ||
+      '[No text in response — stop_reason: ' + (data.stop_reason || 'unknown') + ']';
+    const queries = data._meta?.queries || [];
+    messages.push({ role: 'assistant', content: reply, queries });
+    saveCurrentSession();
+    const bubble = typingDiv.querySelector('.bubble');
+
+    // Render query trace badges if the proxy reported tool calls
+    let traceHtml = '';
+    for (const q of queries) {
+      const label = q.description || (q.sql.length > 60 ? q.sql.slice(0, 60) + '…' : q.sql);
+      const rows = typeof q.row_count === 'number' ? ` · ${q.row_count} rows` : '';
+      traceHtml += `<div class="tool-call">
+        <svg viewBox="0 0 16 16"><path d="M3 4h10M3 8h7M3 12h5"/></svg>
+        <span>${escHtml(label)}</span>
+        <span style="margin-left:auto;opacity:0.6">${rows}</span>
+      </div>`;
+    }
+
+    bubble.innerHTML = traceHtml + formatResponse(reply) + buildSqlToggleHtml(queries);
+    initCharts(bubble);
+    document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
+  } catch (e) {
+    const msg = e && e.message ? escHtml(e.message) : 'Unknown error';
+    const bubble = typingDiv && typingDiv.querySelector('.bubble');
+    if (bubble) {
+      bubble.innerHTML =
+        '<p style="color:var(--danger-text)"><strong>Error:</strong> ' + msg + '</p>' +
+        '<p style="color:var(--text2);font-size:13px;margin-top:6px">' +
+        'Check the proxy terminal for details — it\'s running at ' +
+        '<code style="font-family:var(--mono);font-size:12px;background:var(--bg3);padding:1px 5px;border-radius:3px">' + API_PROXY_URL + '</code>. ' +
+        'Health check: <a href="' + API_PROXY_URL.replace('/messages', '/health') + '" target="_blank" ' +
+        'style="color:var(--accent)">' + API_PROXY_URL.replace('/messages', '/health') + '</a></p>';
+    }
+  }
+
+  isLoading = false;
+  document.getElementById('send-btn').disabled = false;
+  document.getElementById('input').focus();
+}
+</script>
+
+<div class="chart-modal-backdrop" id="chartModalBackdrop" onclick="if(event.target===this)closeChartModal()">
+  <div class="chart-modal">
+    <div class="chart-modal-header">
+      <span class="chart-modal-title" id="chartModalTitle"></span>
+      <button class="chart-modal-close" onclick="closeChartModal()" title="Close">
+        <svg viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+      </button>
+    </div>
+    <div class="chart-modal-body" id="chartModalBody"></div>
+  </div>
+</div>
+
+</body>
+</html>
