@@ -34,7 +34,9 @@
       "Bash(actor)",
       "Bash(python e:/multi-agent/llm-data-explorer/chart_plugins/_build_swimlane.py)",
       "Bash(Get-ChildItem -Path \"e:\\\\multi-agent\\\\llm-data-explorer\" -Recurse -Directory)",
-      "Bash(Select-Object -ExpandProperty FullName)"
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(Get-ChildItem -Path \"e:\\\\multi-agent\\\\llm-data-explorer\" -Recurse -ErrorAction SilentlyContinue)",
+      "Bash(Select-Object FullName)"
     ]
   }
 }
