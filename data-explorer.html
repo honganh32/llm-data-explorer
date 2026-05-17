@@ -648,7 +648,169 @@ function renderECharts(wrap, spec) {
   window.addEventListener('resize', () => ec.resize());
 }
 
-// ── Force-graph renderer with twin collapsing ────────────────────────────────
+// ── Graph grouping helpers ────────────────────────────────────────────────────
+
+function detectAttributeFields(nodes) {
+  if (!nodes.length) return [];
+  const SKIP = new Set(['id', 'name', 'label', 'size', 'value', 'color', 'x', 'y', 'z', 'fx', 'fy', 'index', 'vx', 'vy']);
+  const candidates = [];
+  for (const key of Object.keys(nodes[0])) {
+    if (SKIP.has(key)) continue;
+    const vals = new Set();
+    for (const n of nodes) {
+      const v = n[key];
+      if (v != null && v !== '') vals.add(String(v));
+    }
+    const card = vals.size;
+    if (card >= 2 && card <= Math.min(Math.floor(nodes.length * 0.5), 20))
+      candidates.push({ field: key, cardinality: card });
+  }
+  return candidates.sort((a, b) => a.cardinality - b.cardinality);
+}
+
+function louvainCommunities(nodes, links) {
+  if (!nodes.length) return new Map();
+  const ids = nodes.map(n => n.id);
+  const idSet = new Set(ids);
+  const adj = new Map(ids.map(id => [id, new Map()]));
+  let totalW = 0;
+  links.forEach(l => {
+    if (!idSet.has(l.source) || !idSet.has(l.target) || l.source === l.target) return;
+    const w = +(l.value || 1);
+    adj.get(l.source).set(l.target, (adj.get(l.source).get(l.target) || 0) + w);
+    adj.get(l.target).set(l.source, (adj.get(l.target).get(l.source) || 0) + w);
+    totalW += w;
+  });
+  if (totalW === 0) return new Map(ids.map(id => [id, id]));
+  const m = totalW;
+  const ki = new Map(ids.map(id => [id, [...adj.get(id).values()].reduce((s, w) => s + w, 0)]));
+  const community = new Map(ids.map(id => [id, id]));
+  const commSumTot = new Map(ids.map(id => [id, ki.get(id)]));
+  const sortedIds = [...ids].sort();
+  let improved = true, maxIters = 20;
+  while (improved && maxIters-- > 0) {
+    improved = false;
+    for (const id of sortedIds) {
+      const currComm = community.get(id);
+      const ki_val = ki.get(id);
+      const sumTot_curr = commSumTot.get(currComm) || 0;
+      let k_i_in_curr = 0;
+      const neighCommW = new Map();
+      for (const [nid, w] of adj.get(id)) {
+        const nc = community.get(nid);
+        if (nc === currComm) k_i_in_curr += w;
+        else neighCommW.set(nc, (neighCommW.get(nc) || 0) + w);
+      }
+      let bestGain = 1e-9, bestComm = currComm;
+      for (const [nc, k_i_in_new] of neighCommW) {
+        const sumTot_new = commSumTot.get(nc) || 0;
+        const gain = k_i_in_new - (sumTot_new * ki_val) / (2 * m)
+                   - k_i_in_curr + ((sumTot_curr - ki_val) * ki_val) / (2 * m);
+        if (gain > bestGain) { bestGain = gain; bestComm = nc; }
+      }
+      if (bestComm !== currComm) {
+        commSumTot.set(currComm, (commSumTot.get(currComm) || 0) - ki_val);
+        commSumTot.set(bestComm, (commSumTot.get(bestComm) || 0) + ki_val);
+        community.set(id, bestComm);
+        improved = true;
+      }
+    }
+  }
+  return community;
+}
+
+function buildHierarchicalGroups(allNodes, links, COLORS) {
+  const idToL1Gid = new Map(), idToL2Gid = new Map();
+  const gInfo = new Map(), l1Colors = new Map();
+  let gIdx = 0, groupingMethod = 'none', groupingField = null;
+
+  // Step 1: attribute-first L1 grouping
+  let l1Assignments = null;
+  const attrFields = detectAttributeFields(allNodes);
+  if (attrFields.length > 0) {
+    const bestField = attrFields[0].field;
+    const tempMap = new Map();
+    allNodes.forEach(n => {
+      const val = n[bestField];
+      if (val != null && val !== '') {
+        const key = String(val);
+        if (!tempMap.has(key)) tempMap.set(key, []);
+        tempMap.get(key).push(n.id);
+      }
+    });
+    if ([...tempMap.values()].filter(m => m.length >= 2).length >= 2) {
+      l1Assignments = new Map();
+      tempMap.forEach((members, key) => members.forEach(id => l1Assignments.set(id, key)));
+      groupingField = bestField;
+      groupingMethod = 'attribute';
+    }
+  }
+
+  // Step 2: Louvain fallback
+  if (!l1Assignments) {
+    const commMap = louvainCommunities(allNodes, links);
+    const commSizes = new Map();
+    commMap.forEach(c => commSizes.set(c, (commSizes.get(c) || 0) + 1));
+    if ([...commSizes.values()].filter(sz => sz >= 2).length >= 2) {
+      l1Assignments = commMap;
+      groupingMethod = 'louvain';
+    }
+  }
+
+  // Step 3: build L1 group entries
+  if (l1Assignments) {
+    const l1Map = new Map();
+    allNodes.forEach(n => {
+      const key = l1Assignments.get(n.id);
+      if (key != null) {
+        if (!l1Map.has(key)) l1Map.set(key, []);
+        l1Map.get(key).push(n.id);
+      }
+    });
+    let colorIdx = 0;
+    for (const [key, members] of l1Map) {
+      if (members.length < 2) continue;
+      gIdx++;
+      const gid = '__l1_' + gIdx;
+      const color = COLORS[colorIdx++ % COLORS.length];
+      const label = groupingMethod === 'attribute'
+        ? groupingField + ': ' + key + ' (' + members.length + ')'
+        : 'Community ' + colorIdx + ' (' + members.length + ')';
+      gInfo.set(gid, { kind: groupingMethod, level: 1, members, subGroups: [], parentGid: null, expanded: false, displayLabel: label, color });
+      l1Colors.set(gid, color);
+      members.forEach(id => idToL1Gid.set(id, gid));
+    }
+  }
+
+  // Step 4: twin sub-groups (L2) scoped within each L1 group
+  const sigSet = new Map(allNodes.map(n => [n.id, new Set()]));
+  links.forEach(l => {
+    const lab = l.label || '';
+    if (sigSet.has(l.source)) sigSet.get(l.source).add(l.target + '|' + lab);
+    if (sigSet.has(l.target)) sigSet.get(l.target).add(l.source + '|' + lab);
+  });
+  const bySig = new Map();
+  allNodes.forEach(n => {
+    const l1g = idToL1Gid.get(n.id) || '__none__';
+    const sig = l1g + '::' + [...sigSet.get(n.id)].sort().join('||');
+    if (!bySig.has(sig)) bySig.set(sig, []);
+    bySig.get(sig).push(n.id);
+  });
+  for (const members of bySig.values()) {
+    if (members.length < 2) continue;
+    gIdx++;
+    const gid = '__l2_' + gIdx;
+    const parentGid = idToL1Gid.get(members[0]) || null;
+    const color = parentGid ? (l1Colors.get(parentGid) || '#2E9CDB') : '#2E9CDB';
+    gInfo.set(gid, { kind: 'twin', level: 2, members, subGroups: [], parentGid, expanded: false, displayLabel: 'Twins (' + members.length + ')', color });
+    if (parentGid && gInfo.has(parentGid)) gInfo.get(parentGid).subGroups.push(gid);
+    members.forEach(id => idToL2Gid.set(id, gid));
+  }
+
+  return { idToL1Gid, idToL2Gid, gInfo, l1Colors, groupingMethod, groupingField };
+}
+
+// ── Force-graph renderer with hierarchical grouping ───────────────────────────
 function renderGraph(wrap, spec) {
   if (!wrap.style.height) wrap.style.height = '520px';
   wrap._chartSpec = spec;
@@ -661,43 +823,22 @@ function renderGraph(wrap, spec) {
   const validIds = new Set(allNodes.map(n => n.id));
   const links = rawLinks.filter(l => validIds.has(l.source) && validIds.has(l.target));
 
-  // ── Twin pass: identical (partner|label) sets ───────────────────────────
-  const sigSet = new Map();
-  allNodes.forEach(n => sigSet.set(n.id, new Set()));
-  links.forEach(l => {
-    const lab = l.label || '';
-    sigSet.get(l.source).add(l.target + '|' + lab);
-    sigSet.get(l.target).add(l.source + '|' + lab);
-  });
-  const bySig = new Map();
-  allNodes.forEach(n => {
-    const k = [...sigSet.get(n.id)].sort().join('||');
-    if (!bySig.has(k)) bySig.set(k, []);
-    bySig.get(k).push(n.id);
-  });
-  const idToGid = new Map();
-  const gInfo = new Map();
-  let gIdx = 0;
-  for (const members of bySig.values()) {
-    if (members.length >= 2) {
-      gIdx++;
-      const gid = '__grp_' + gIdx;
-      gInfo.set(gid, { kind: 'twin', members, idx: gIdx, expanded: false,
-        displayLabel: 'Group ' + gIdx + ' (' + members.length + ')' });
-      members.forEach(m => idToGid.set(m, gid));
-    }
-  }
+  // ── Hierarchical grouping: attribute-first → Louvain fallback + twin sub-groups ──
+  const { idToL1Gid, idToL2Gid, gInfo, l1Colors, groupingMethod, groupingField } =
+    buildHierarchicalGroups(allNodes, links, CHART_COLORS);
+  const l1Count = [...gInfo.values()].filter(g => g.level === 1).length;
+  const l2Count = [...gInfo.values()].filter(g => g.level === 2).length;
 
   // ── Categories from link labels ─────────────────────────────────────────
   const categories = [...new Set(links.map(l => l.label).filter(Boolean))];
   const catColor = new Map(categories.map((c, i) => [c, CHART_COLORS[i % CHART_COLORS.length]]));
   const catVisible = new Map(categories.map(c => [c, true]));
 
-  // ── Precompute total connections per group (for node sizing) ─────────
-  const groupTotalConns = new Map();
-  for (const [gid, info] of gInfo) {
-    const memberSet = new Set(info.members);
-    groupTotalConns.set(gid, links.filter(l => memberSet.has(l.source) || memberSet.has(l.target)).length);
+  // ── Precompute connections per group (for node sizing) ───────────────
+  const groupConns = new Map();
+  for (const [gid, grp] of gInfo) {
+    const mset = new Set(grp.members);
+    groupConns.set(gid, links.filter(l => mset.has(l.source) || mset.has(l.target)).length);
   }
 
   // ── Build wrap layout ─────────────────────────────────────────────────
@@ -708,10 +849,19 @@ function renderGraph(wrap, spec) {
   // Hint bar (group count note)
   const hdr = document.createElement('div');
   hdr.style.cssText = 'flex:0 0 auto;padding:3px 0 2px;text-align:center;';
-  if (gIdx > 0) {
+  if (l1Count > 0 || l2Count > 0) {
     const note = document.createElement('div');
     note.style.cssText = 'font-size:10px;color:var(--text3,#999);margin-bottom:2px;';
-    note.textContent = gIdx + ' collapsed group' + (gIdx > 1 ? 's' : '') + ' (twins + hub-leaves) — click ◆ node to expand, click red node to collapse';
+    let msg = '';
+    if (l1Count > 0) {
+      msg = groupingMethod === 'attribute'
+        ? 'Grouped by "' + groupingField + '" → ' + l1Count + ' group' + (l1Count > 1 ? 's' : '')
+        : l1Count + ' Louvain communit' + (l1Count > 1 ? 'ies' : 'y');
+      if (l2Count > 0) msg += ', ' + l2Count + ' twin sub-group' + (l2Count > 1 ? 's' : '');
+    } else {
+      msg = l2Count + ' twin group' + (l2Count > 1 ? 's' : '');
+    }
+    note.textContent = msg + ' — click ◆ to expand level by level, click highlighted node to collapse';
     hdr.appendChild(note);
   }
   wrap.appendChild(hdr);
@@ -887,16 +1037,24 @@ function renderGraph(wrap, spec) {
   arrowSec.appendChild(arrowMinRow);
   ctrlPanel.appendChild(arrowSec);
 
-  // Groups section
-  if (gIdx > 0) {
-    const grpSec = mkPanelSection('Groups');
-    grpBtn = mkBtn('Expand all groups');
-    grpBtn.onclick = () => {
-      const anyC = [...gInfo.values()].some(g => !g.expanded);
-      for (const g of gInfo.values()) g.expanded = anyC;
-      rerender();
-    };
-    grpSec.appendChild(grpBtn);
+  // Hierarchy section
+  if (l1Count > 0 || l2Count > 0) {
+    const grpSec = mkPanelSection('Hierarchy');
+    if (l1Count > 0) {
+      grpBtn = mkBtn('Expand L1 groups');
+      grpBtn.onclick = () => {
+        const anyCollapsed = [...gInfo.values()].filter(g => g.level === 1).some(g => !g.expanded);
+        for (const g of gInfo.values()) { if (g.level === 1) g.expanded = anyCollapsed; }
+        rerender();
+      };
+      grpSec.appendChild(grpBtn);
+    }
+    const expandAllBtn = mkBtn('Expand all');
+    expandAllBtn.onclick = () => { for (const g of gInfo.values()) g.expanded = true; rerender(); };
+    grpSec.appendChild(expandAllBtn);
+    const collapseAllBtn = mkBtn('Collapse all');
+    collapseAllBtn.onclick = () => { for (const g of gInfo.values()) g.expanded = false; rerender(); };
+    grpSec.appendChild(collapseAllBtn);
     ctrlPanel.appendChild(grpSec);
   }
 
@@ -944,8 +1102,8 @@ function renderGraph(wrap, spec) {
 
   function rerender() {
     if (grpBtn) {
-      const anyCol = [...gInfo.values()].some(g => !g.expanded);
-      grpBtn.textContent = anyCol ? 'Expand all groups' : 'Collapse all groups';
+      const anyCollapsedL1 = [...gInfo.values()].filter(g => g.level === 1).some(g => !g.expanded);
+      grpBtn.textContent = anyCollapsedL1 ? 'Expand L1 groups' : 'Collapse L1 groups';
     }
     if (catBtn) {
       const anyVis = categories.some(c => catVisible.get(c));
@@ -957,15 +1115,19 @@ function renderGraph(wrap, spec) {
       el.style.textDecoration = on ? 'none' : 'line-through';
     });
 
-    // Display nodes
+    // Display nodes (two-level hierarchy)
     const idToDisp = new Map();
     const dispEntries = [];
-    const seenG = new Set();
+    const seenL1 = new Set(), seenL2 = new Set();
     allNodes.forEach(n => {
-      const gid = idToGid.get(n.id);
-      if (gid && !gInfo.get(gid).expanded) {
-        if (!seenG.has(gid)) { seenG.add(gid); dispEntries.push({ kind: 'group', gid, info: gInfo.get(gid) }); }
-        idToDisp.set(n.id, gid);
+      const l1gid = idToL1Gid.get(n.id);
+      const l2gid = idToL2Gid.get(n.id);
+      if (l1gid && !gInfo.get(l1gid).expanded) {
+        if (!seenL1.has(l1gid)) { seenL1.add(l1gid); dispEntries.push({ kind: 'group', gid: l1gid, info: gInfo.get(l1gid) }); }
+        idToDisp.set(n.id, l1gid);
+      } else if (l2gid && !gInfo.get(l2gid).expanded) {
+        if (!seenL2.has(l2gid)) { seenL2.add(l2gid); dispEntries.push({ kind: 'group', gid: l2gid, info: gInfo.get(l2gid) }); }
+        idToDisp.set(n.id, l2gid);
       } else {
         dispEntries.push({ kind: 'node', node: n });
         idToDisp.set(n.id, n.id);
@@ -1057,15 +1219,17 @@ function renderGraph(wrap, spec) {
       };
       
       if (d.kind === 'group') {
-        const totalConns = groupTotalConns.get(d.gid) || d.info.members.length;
-        const sz = Math.max(22, Math.min(72, 14 + Math.sqrt(totalConns) * 5));
+        const grp = d.info;
+        const totalConns = groupConns.get(d.gid) || grp.members.length;
+        const sz = Math.max(22, Math.min(72, 14 + Math.sqrt(totalConns) * 4));
+        const isL1 = grp.level === 1;
         return {
           id: d.gid,
-          name: '◆ ' + d.info.displayLabel,
-          symbol: 'diamond',
+          name: (isL1 ? '◆ ' : '◇ ') + grp.displayLabel,
+          symbol: isL1 ? 'diamond' : 'pin',
           symbolSize: sz,
-          itemStyle: { color: getNodeColor(d.gid), borderColor: '#333', borderWidth: 1.5, opacity: nodeOpacity },
-          label: { show: true, position: 'inside', fontSize: nodeLabelFontSize, fontWeight: 'bold', color: t.text },
+          itemStyle: { color: grp.color || '#2E9CDB', borderColor: '#333', borderWidth: isL1 ? 2 : 1, opacity: nodeOpacity },
+          label: { show: true, position: 'inside', fontSize: nodeLabelFontSize, fontWeight: 'bold', color: '#ffffff' },
           _isGroup: true, _gid: d.gid,
         };
       }
@@ -1076,28 +1240,35 @@ function renderGraph(wrap, spec) {
         ? Math.max(16, Math.min(72, Math.sqrt(n.value) * 4))
         : Math.max(10, Math.min(56, 8 + Math.sqrt(deg) * 4)));
       const role = (sourceSet.has(id) && destSet.has(id)) ? 'both' : sourceSet.has(id) ? 'source' : 'dest';
-      const inExp = idToGid.has(id) && gInfo.get(idToGid.get(id)).expanded;
+      const l1gid = idToL1Gid.get(id);
+      const l2gid = idToL2Gid.get(id);
+      const inExpL1 = l1gid != null && gInfo.get(l1gid).expanded;
+      const inExpL2 = l2gid != null && gInfo.get(l2gid).expanded;
+      const inGroup = inExpL1 || inExpL2;
+      const groupGid = inExpL2 ? l2gid : (inExpL1 ? l1gid : null);
+      const communityColor = l1gid ? l1Colors.get(l1gid) : null;
+      const borderColor = inExpL2 ? '#e63946' : (inExpL1 && communityColor ? communityColor : null);
       return {
         id,
         name: n.name || id,
         symbolSize: sz,
         itemStyle: {
-          color: useColorByCategory ? getNodeColor(id) : (n.color || ROLE_COLOR[role]),
-          borderColor: inExp ? '#e63946' : null,
-          borderWidth: inExp ? 2.5 : 0,
+          color: useColorByCategory ? getNodeColor(id) : (n.color || communityColor || ROLE_COLOR[role]),
+          borderColor,
+          borderWidth: inGroup ? 2.5 : 0,
           opacity: nodeOpacity,
         },
         label: {
-          show: deg >= labelCutoff || inExp,
+          show: deg >= labelCutoff || inGroup,
           position: 'inside',
           fontSize: nodeLabelFontSize,
-          color: inExp ? '#ffffff' : '#ffffff',
-          textBorderColor: inExp ? '#e63946' : t.text,
+          color: '#ffffff',
+          textBorderColor: borderColor || t.text,
           textBorderWidth: 2,
-          fontWeight: inExp ? 'bold' : 'normal',
+          fontWeight: inGroup ? 'bold' : 'normal',
         },
-        _inExpandedGroup: inExp,
-        _expandedGid: inExp ? idToGid.get(id) : null,
+        _inGroup: inGroup,
+        _groupGid: groupGid,
       };
     });
 
@@ -1133,9 +1304,12 @@ function renderGraph(wrap, spec) {
           if (p.data._isGroup) {
             const info = gInfo.get(p.data._gid);
             const list = info.members.slice(0, 8).join(', ') + (info.members.length > 8 ? ', …' : '');
-            return '<b>' + p.name + '</b><br/>' + list + '<br/><i>click to expand</i>';
+            const kindLabel = info.level === 1
+              ? (groupingMethod === 'attribute' ? 'Attribute group' : 'Louvain community')
+              : 'Twin sub-group';
+            return '<b>' + p.name + '</b><br/><i>' + kindLabel + '</i><br/>' + list + '<br/><i>click to expand</i>';
           }
-          return p.name + (p.data._inExpandedGroup ? '<br/><i>click to collapse group</i>' : '');
+          return p.name + (p.data._inGroup ? '<br/><i>click to collapse group</i>' : '');
         },
       },
       legend: { show: false },
@@ -1161,8 +1335,9 @@ function renderGraph(wrap, spec) {
   ec.on('click', params => {
     if (params.dataType !== 'node') return;
     const d = params.data;
-    if (d && d._isGroup) { gInfo.get(d._gid).expanded = true; rerender(); }
-    else if (d && d._inExpandedGroup) { gInfo.get(d._expandedGid).expanded = false; rerender(); }
+    if (!d) return;
+    if (d._isGroup) { gInfo.get(d._gid).expanded = true; rerender(); }
+    else if (d._inGroup) { gInfo.get(d._groupGid).expanded = false; rerender(); }
   });
 
   window.addEventListener('resize', () => ec.resize());
