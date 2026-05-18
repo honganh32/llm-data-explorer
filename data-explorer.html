@@ -751,8 +751,17 @@ function buildHierarchicalGroups(allNodes, links, COLORS) {
     const commMap = louvainCommunities(allNodes, links);
     const commSizes = new Map();
     commMap.forEach(c => commSizes.set(c, (commSizes.get(c) || 0) + 1));
-    if ([...commSizes.values()].filter(sz => sz >= 2).length >= 2) {
-      l1Assignments = commMap;
+    // Keep only communities with ≥3 members; take at most 20 largest
+    const validComms = new Set(
+      [...commSizes.entries()]
+        .filter(([, sz]) => sz >= 3)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 20)
+        .map(([c]) => c)
+    );
+    if (validComms.size >= 2) {
+      l1Assignments = new Map();
+      commMap.forEach((c, id) => { if (validComms.has(c)) l1Assignments.set(id, c); });
       groupingMethod = 'louvain';
     }
   }
@@ -769,14 +778,14 @@ function buildHierarchicalGroups(allNodes, links, COLORS) {
     });
     let colorIdx = 0;
     for (const [key, members] of l1Map) {
-      if (members.length < 2) continue;
+      if (members.length < 3) continue;
       gIdx++;
       const gid = '__l1_' + gIdx;
       const color = COLORS[colorIdx++ % COLORS.length];
       const label = groupingMethod === 'attribute'
-        ? groupingField + ': ' + key + ' (' + members.length + ')'
-        : 'Community ' + colorIdx + ' (' + members.length + ')';
-      gInfo.set(gid, { kind: groupingMethod, level: 1, members, subGroups: [], parentGid: null, expanded: false, displayLabel: label, color });
+        ? groupingField + ': ' + key
+        : 'Community ' + colorIdx;
+      gInfo.set(gid, { kind: groupingMethod, level: 1, members, subGroups: [], parentGid: null, expanded: false, displayLabel: label, color, communityNum: colorIdx });
       l1Colors.set(gid, color);
       members.forEach(id => idToL1Gid.set(id, gid));
     }
@@ -796,13 +805,20 @@ function buildHierarchicalGroups(allNodes, links, COLORS) {
     if (!bySig.has(sig)) bySig.set(sig, []);
     bySig.get(sig).push(n.id);
   });
+  const l1TwinIdx = new Map();
   for (const members of bySig.values()) {
     if (members.length < 2) continue;
     gIdx++;
     const gid = '__l2_' + gIdx;
     const parentGid = idToL1Gid.get(members[0]) || null;
     const color = parentGid ? (l1Colors.get(parentGid) || '#2E9CDB') : '#2E9CDB';
-    gInfo.set(gid, { kind: 'twin', level: 2, members, subGroups: [], parentGid, expanded: false, displayLabel: 'Twins (' + members.length + ')', color });
+    const twinNum = (l1TwinIdx.get(parentGid) || 0) + 1;
+    l1TwinIdx.set(parentGid, twinNum);
+    const parentCommNum = parentGid && gInfo.has(parentGid) ? gInfo.get(parentGid).communityNum : null;
+    const twinName = parentCommNum != null
+      ? `Community ${parentCommNum} - Twins ${twinNum}`
+      : `Twins ${twinNum}`;
+    gInfo.set(gid, { kind: 'twin', level: 2, members, subGroups: [], parentGid, expanded: false, displayLabel: twinName, color });
     if (parentGid && gInfo.has(parentGid)) gInfo.get(parentGid).subGroups.push(gid);
     members.forEach(id => idToL2Gid.set(id, gid));
   }
@@ -861,7 +877,7 @@ function renderGraph(wrap, spec) {
     } else {
       msg = l2Count + ' twin group' + (l2Count > 1 ? 's' : '');
     }
-    note.textContent = msg + ' — click ◆ to expand level by level, click highlighted node to collapse';
+    note.textContent = msg + ' — click a hollow circle to expand, click a filled node to collapse its group';
     hdr.appendChild(note);
   }
   wrap.appendChild(hdr);
@@ -987,7 +1003,24 @@ function renderGraph(wrap, spec) {
   nodeOpacityRow.appendChild(nodeOpacityLabel);
   nodeOpacityRow.appendChild(nodeOpacitySlider);
   nodeSec.appendChild(nodeOpacityRow);
-  
+
+  const nodeSizeRow = document.createElement('div');
+  nodeSizeRow.style.cssText = 'display:flex;flex-direction:column;gap:3px;';
+  const nodeSizeLabel = document.createElement('div');
+  nodeSizeLabel.style.cssText = 'font-size:11px;color:var(--text2,#666);';
+  nodeSizeLabel.textContent = 'Node size';
+  const nodeSizeSlider = document.createElement('input');
+  nodeSizeSlider.type = 'range';
+  nodeSizeSlider.min = '0.1';
+  nodeSizeSlider.max = '1.0';
+  nodeSizeSlider.step = '0.05';
+  nodeSizeSlider.value = '0.2';
+  nodeSizeSlider.style.cssText = 'width:100%;cursor:pointer;';
+  nodeSizeSlider.oninput = () => { nodeSizeScale = parseFloat(nodeSizeSlider.value); rerender(); };
+  nodeSizeRow.appendChild(nodeSizeLabel);
+  nodeSizeRow.appendChild(nodeSizeSlider);
+  nodeSec.appendChild(nodeSizeRow);
+
   const nodeLabelRow = document.createElement('div');
   nodeLabelRow.style.cssText = 'display:flex;flex-direction:column;gap:3px;';
   const nodeLabelLabel = document.createElement('div');
@@ -1004,6 +1037,29 @@ function renderGraph(wrap, spec) {
   nodeLabelRow.appendChild(nodeLabelLabel);
   nodeLabelRow.appendChild(nodeLabelSlider);
   nodeSec.appendChild(nodeLabelRow);
+
+  const twinLabelRow = document.createElement('label');
+  twinLabelRow.style.cssText = 'display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--text,#333);';
+  const twinLabelCb = document.createElement('input');
+  twinLabelCb.type = 'checkbox';
+  twinLabelCb.checked = false;
+  twinLabelCb.style.cursor = 'pointer';
+  twinLabelCb.onchange = () => { showTwinLabels = twinLabelCb.checked; rerender(); };
+  twinLabelRow.appendChild(twinLabelCb);
+  twinLabelRow.appendChild(document.createTextNode('Show twin node labels'));
+  nodeSec.appendChild(twinLabelRow);
+
+  const leafFillRow = document.createElement('label');
+  leafFillRow.style.cssText = 'display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--text,#333);';
+  const leafFillCb = document.createElement('input');
+  leafFillCb.type = 'checkbox';
+  leafFillCb.checked = true;
+  leafFillCb.style.cursor = 'pointer';
+  leafFillCb.onchange = () => { leafFillWhite = leafFillCb.checked; rerender(); };
+  leafFillRow.appendChild(leafFillCb);
+  leafFillRow.appendChild(document.createTextNode('Solid white leaf nodes'));
+  nodeSec.appendChild(leafFillRow);
+
   ctrlPanel.appendChild(nodeSec);
 
   // Arrow section
@@ -1044,13 +1100,21 @@ function renderGraph(wrap, spec) {
       grpBtn = mkBtn('Expand L1 groups');
       grpBtn.onclick = () => {
         const anyCollapsed = [...gInfo.values()].filter(g => g.level === 1).some(g => !g.expanded);
-        for (const g of gInfo.values()) { if (g.level === 1) g.expanded = anyCollapsed; }
+        for (const [gid, g] of gInfo.entries()) {
+          if (g.level === 1) {
+            if (!g.expanded && anyCollapsed) g.savedPos = posStore.get(gid);
+            g.expanded = anyCollapsed;
+          }
+        }
         rerender();
       };
       grpSec.appendChild(grpBtn);
     }
     const expandAllBtn = mkBtn('Expand all');
-    expandAllBtn.onclick = () => { for (const g of gInfo.values()) g.expanded = true; rerender(); };
+    expandAllBtn.onclick = () => {
+      for (const [gid, g] of gInfo.entries()) { if (!g.expanded) g.savedPos = posStore.get(gid); g.expanded = true; }
+      rerender();
+    };
     grpSec.appendChild(expandAllBtn);
     const collapseAllBtn = mkBtn('Collapse all');
     collapseAllBtn.onclick = () => { for (const g of gInfo.values()) g.expanded = false; rerender(); };
@@ -1087,6 +1151,70 @@ function renderGraph(wrap, spec) {
 
   const ec = echarts.init(chartDiv);
   const directed = !!spec.directed;
+
+  // Bubble overlay — a separate <canvas> drawn on top with pointer-events:none so it
+  // never captures clicks. Redrawn via ec.on('finished') which fires after every
+  // setOption AND after every roam (pan/zoom), keeping bubbles in sync.
+  if (getComputedStyle(chartDiv).position === 'static') chartDiv.style.position = 'relative';
+  const overlayCanvas = document.createElement('canvas');
+  overlayCanvas.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;';
+  chartDiv.appendChild(overlayCanvas);
+
+  function redrawBubbles() {
+    const W2 = overlayCanvas.width  = chartDiv.offsetWidth;
+    const H2 = overlayCanvas.height = chartDiv.offsetHeight;
+    const ctx = overlayCanvas.getContext('2d');
+    ctx.clearRect(0, 0, W2, H2);
+
+    // Read pixel positions directly from ECharts' post-layout internal state.
+    // This correctly reflects the current pan/zoom without needing convertToPixel.
+    const pixelById = new Map();
+    try {
+      const sd = ec.getModel().getSeriesByIndex(0).getData();
+      for (let i = 0; i < sd.count(); i++) {
+        const layout = sd.getItemLayout(i);
+        const id = sd.getId(i);
+        if (layout && id) pixelById.set(id, { x: layout.x, y: layout.y });
+      }
+    } catch (_) {}
+
+    gInfo.forEach((grp, gid) => {
+      if (!grp.expanded) return;
+      const memberDispIds = [...new Set(
+        grp.members.map(id => currentIdToDisp.get(id)).filter(Boolean)
+      )];
+      const pixelPositions = memberDispIds.map(did => pixelById.get(did)).filter(Boolean);
+      if (pixelPositions.length === 0) return;
+      const cx = pixelPositions.reduce((s, p) => s + p.x, 0) / pixelPositions.length;
+      const cy = pixelPositions.reduce((s, p) => s + p.y, 0) / pixelPositions.length;
+      const maxDist = pixelPositions.reduce((m, p) => Math.max(m, Math.hypot(p.x - cx, p.y - cy)), 0);
+      const r = Math.max(40, maxDist + 40);
+      const hex = grp.color || '#4fa8c5';
+      const n = parseInt(hex.replace('#', ''), 16);
+      const rgb = `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${rgb},0.1)`;
+      ctx.fill();
+      ctx.strokeStyle = `rgba(${rgb},0.75)`;
+      ctx.lineWidth = grp.level === 1 ? 2 : 1.5;
+      ctx.setLineDash(grp.level === 1 ? [] : [6, 3]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.font = `bold ${nodeLabelFontSize}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = `rgba(${rgb},0.9)`;
+      ctx.fillText(grp.displayLabel, cx, cy + r + nodeLabelFontSize + 2);
+    });
+  }
+  ec.on('finished', redrawBubbles);
+
+  // D3-managed position store — persists across rerenders, never touched by ECharts
+  const posStore = new Map();
+  // Track which node/group IDs were displayed in the previous render to detect true newcomers
+  let prevFilteredIds = new Set();
+  // Snapshot of idToDisp from the latest rerender — needed by redrawBubbles
+  let currentIdToDisp = new Map();
   const titleOpt = spec.title ? { text: spec.title, top: 5, left: 'center', textStyle: { color: t.text, fontSize: 13 } } : undefined;
   const ROLE_COLOR = { both: '#2E9CDB', source: '#2E9CDB', dest: '#2E9CDB' };
   const GROUP_COLOR_TWIN = '#2E9CDB';
@@ -1094,6 +1222,9 @@ function renderGraph(wrap, spec) {
   let useColorByCategory = false;
   let edgeOpacity = 0.5;
   let nodeOpacity = 1.0;
+  let nodeSizeScale = 0.2;
+  let showTwinLabels = false;
+  let leafFillWhite = true;
   let nodeLabelFontSize = 10;
   let edgeLabelFontSize = 10;
   let arrowheadMinSize = 8;
@@ -1133,13 +1264,14 @@ function renderGraph(wrap, spec) {
         idToDisp.set(n.id, n.id);
       }
     });
+    currentIdToDisp = idToDisp; // expose to redrawBubbles
 
     // Filter + dedupe links
     const visLinks = links.filter(l => !l.label || catVisible.get(l.label));
     const linkMap = new Map();
     visLinks.forEach(l => {
       const s = idToDisp.get(l.source), tg = idToDisp.get(l.target);
-      if (s === tg) return;
+      if (!s || !tg || s === tg) return;
       const key = [s, tg].sort().join('|') + '|' + (l.label || '');
       if (!linkMap.has(key)) linkMap.set(key, { source: s, target: tg, label: l.label, color: l.color, value: +(l.value || 1), count: 1 });
       else { const e = linkMap.get(key); e.value += +(l.value || 1); e.count++; }
@@ -1178,6 +1310,188 @@ function renderGraph(wrap, spec) {
       // Filter links: keep only those connecting visible nodes
       filteredLinks = dispLinks.filter(l => visibleIds.has(l.source) && visibleIds.has(l.target));
     }
+
+    // ── D3 force simulation for stable positions ────────────────────────────
+    const W = Math.max(chartDiv.offsetWidth || 0, 200);
+    const H = Math.max(chartDiv.offsetHeight || 0, 380);
+    const isFirstLayout = posStore.size === 0;
+
+    // Snapshot which IDs were already in posStore — used to detect newcomers in seeding.
+    const preExistingIds = new Set(posStore.keys());
+
+    if (isFirstLayout) {
+      // Arrange in an evenly-spaced circle so nodes start spread out rather than
+      // clustered near the origin (D3's default random init).
+      // Seed groups on a larger outer ring, individual nodes on a smaller inner ring,
+      // so the simulation starts with communities already somewhat separated.
+      const groups0 = filteredEntries.filter(d => d.kind === 'group');
+      const indivs0 = filteredEntries.filter(d => d.kind !== 'group');
+      const outerR = Math.min(W, H) * 0.42;
+      const innerR = Math.min(W, H) * 0.22;
+      groups0.forEach((d, i) => {
+        const angle = (i / Math.max(1, groups0.length)) * Math.PI * 2;
+        posStore.set(d.gid, { x: W / 2 + outerR * Math.cos(angle), y: H / 2 + outerR * Math.sin(angle) });
+      });
+      indivs0.forEach((d, i) => {
+        const angle = (i / Math.max(1, indivs0.length)) * Math.PI * 2;
+        posStore.set(d.node.id, { x: W / 2 + innerR * Math.cos(angle), y: H / 2 + innerR * Math.sin(angle) });
+      });
+    } else {
+      // Pass 1: seed collapsed groups (they appear from member expansion being reversed)
+      filteredEntries.forEach(d => {
+        if (d.kind !== 'group') return;
+        const displayId = d.gid;
+        if (posStore.has(displayId)) return;
+        const grp = d.info;
+        if (grp.savedPos) {
+          posStore.set(displayId, grp.savedPos);
+        } else {
+          // Centroid of members' last known positions
+          let sx = 0, sy = 0, cnt = 0;
+          grp.members.forEach(mid => { const p = posStore.get(mid); if (p) { sx += p.x; sy += p.y; cnt++; } });
+          if (cnt > 0) {
+            posStore.set(displayId, { x: sx / cnt, y: sy / cnt });
+          } else {
+            // Members not yet in posStore — this is an L2 group appearing for the first time
+            // because its L1 parent was just expanded. Seed near the L1 parent's position
+            // (not the canvas center) so the group starts in the right area of the graph.
+            const anyMember = grp.members[0];
+            const parentL1gid = anyMember ? idToL1Gid.get(anyMember) : null;
+            const parentPos = parentL1gid ? posStore.get(parentL1gid) : null;
+            const jitter = 40;
+            posStore.set(displayId, parentPos
+              ? { x: parentPos.x + (Math.random() - 0.5) * jitter, y: parentPos.y + (Math.random() - 0.5) * jitter }
+              : { x: W / 2, y: H / 2 });
+          }
+        }
+      });
+
+      // Pass 2: gather new individual nodes by parent so we can spread them on
+      // an evenly-spaced circle (random scatter gives unreadable dense blobs for
+      // large groups).
+      const newNodesByParent = new Map();
+      filteredEntries.forEach(d => {
+        if (d.kind !== 'node') return;
+        const id = d.node.id;
+        if (posStore.has(id)) return;
+        const l2gid = idToL2Gid.get(id);
+        const l1gid = idToL1Gid.get(id);
+        const pgid = (l2gid && posStore.has(l2gid)) ? l2gid : ((l1gid && posStore.has(l1gid)) ? l1gid : null);
+        const bucket = pgid || '__none__';
+        if (!newNodesByParent.has(bucket)) newNodesByParent.set(bucket, []);
+        newNodesByParent.get(bucket).push(id);
+      });
+
+      // Seed new nodes randomly within a disk. A regular circle produces
+      // concentric-ring artifacts once groupAttract and collision settle;
+      // random placement lets charge+link+collision find a natural layout.
+      newNodesByParent.forEach((nodeIds, pgid) => {
+        const center = pgid !== '__none__' && posStore.has(pgid)
+          ? posStore.get(pgid)
+          : { x: W / 2, y: H / 2 };
+        const r = Math.max(200, Math.sqrt(nodeIds.length) * 60);
+        nodeIds.forEach(nodeId => {
+          const angle = Math.random() * Math.PI * 2;
+          const dist  = r * Math.sqrt(Math.random()); // uniform within disk
+          posStore.set(nodeId, { x: center.x + Math.cos(angle) * dist, y: center.y + Math.sin(angle) * dist });
+        });
+      });
+    }
+
+    // Warm-start: all nodes begin at their last known positions; newcomers begin at
+    // their seeded position. No pinning — let the whole graph shift slightly to
+    // accommodate newly revealed nodes, matching natural force-directed behaviour.
+    const d3Nodes = filteredEntries.map(d => {
+      const id = d.kind === 'group' ? d.gid : d.node.id;
+      const p = posStore.get(id);
+      const isGroup = d.kind === 'group';
+      const grpSz = isGroup ? Math.max(22, Math.min(72, 14 + Math.sqrt(groupConns.get(id) || d.info.members.length) * 4)) : 0;
+      // Identify which expanded L1 community anchors this node so the group-attraction
+      // force can keep community members clustered near their original group position.
+      let l1Anchor = null;
+      if (!isGroup) {
+        const l1gid = idToL1Gid.get(id);
+        if (l1gid && gInfo.get(l1gid).expanded) l1Anchor = l1gid;
+      } else if (d.info.level === 2) {
+        const anyMember = d.info.members[0];
+        const l1gid = anyMember ? idToL1Gid.get(anyMember) : null;
+        if (l1gid && gInfo.get(l1gid).expanded) l1Anchor = l1gid;
+      }
+      return { id, x: p ? p.x : W / 2, y: p ? p.y : H / 2, isGroup, grpSz, l1Anchor };
+    });
+
+    // Only run D3 when the set of displayed nodes actually changed (expand/collapse).
+    // Pure visual rerenders (opacity, color, search with same nodes) skip D3.
+    const curFilteredIds = new Set(filteredEntries.map(d => d.kind === 'group' ? d.gid : d.node.id));
+    const hasNewNodes = isFirstLayout || [...curFilteredIds].some(id => !prevFilteredIds.has(id));
+    if (hasNewNodes) {
+      const simIdSet = curFilteredIds;
+      // Parallel edges between the same pair (same source+target, different labels)
+      // each contribute independent link force. Deduplicate to 1 per unordered pair
+      // so high-connectivity pairs don't collapse into each other.
+      const d3PairSeen = new Set();
+      const d3Links = filteredLinks
+        .filter(l => {
+          if (!simIdSet.has(l.source) || !simIdSet.has(l.target)) return false;
+          const pair = l.source < l.target ? `${l.source}|${l.target}` : `${l.target}|${l.source}`;
+          if (d3PairSeen.has(pair)) return false;
+          d3PairSeen.add(pair);
+          return true;
+        })
+        .map(l => ({ source: l.source, target: l.target }));
+
+      const makeLinkForce = () => d3.forceLink(d3Links).id(d => d.id)
+        .distance(l => {
+          const sg = l.source.isGroup, tg = l.target.isGroup;
+          return (sg && tg) ? 400 : (sg || tg) ? 230 : 150;
+        })
+        .strength(l => {
+          const sg = l.source.isGroup, tg = l.target.isGroup;
+          return (sg && tg) ? 0.04 : 0.12;
+        });
+
+      if (isFirstLayout) {
+        // Phase 1: repulsion + collision only at constant alpha so nodes spread out
+        // freely before links are introduced. Without this, link forces immediately
+        // pull connected groups back into a pile during the first ticks.
+        const d3sim = d3.forceSimulation(d3Nodes)
+          .force('charge', d3.forceManyBody().strength(d => d.isGroup ? -(600 + d.grpSz * d.grpSz * 0.4) : -450))
+          .force('x', d3.forceX(W / 2).strength(0.01))
+          .force('y', d3.forceY(H / 2).strength(0.01))
+          .force('collide', d3.forceCollide(d => d.isGroup ? Math.max(150, d.grpSz * 2.5) : 50))
+          .alphaDecay(0)
+          .stop();
+        for (let i = 0; i < 150; i++) d3sim.tick();
+        // Phase 2: introduce links on the already-spread positions and run to settle.
+        d3sim.force('link', makeLinkForce()).alphaDecay(0.0228).alpha(1);
+        for (let i = 0; i < 450; i++) { d3sim.tick(); if (d3sim.alpha() < 0.001) break; }
+      } else {
+        const d3sim = d3.forceSimulation(d3Nodes)
+          .force('link', makeLinkForce())
+          .force('charge', d3.forceManyBody().strength(d => d.isGroup ? -(600 + d.grpSz * d.grpSz * 0.4) : -600))
+          .force('x', d3.forceX(W / 2).strength(0.01))
+          .force('y', d3.forceY(H / 2).strength(0.01))
+          .force('collide', d3.forceCollide(d => d.isGroup ? Math.max(150, d.grpSz * 2.5) : 50))
+          // Only pull L2 group nodes toward their community anchor.
+          // Individual nodes must NOT have this force — it creates concentric-ring
+          // equilibria where charge+groupAttract+collision lock nodes into orbits.
+          // Individual node cohesion comes from intra-community link force instead.
+          .force('groupAttract', alpha => {
+            d3Nodes.forEach(node => {
+              if (!node.l1Anchor || !node.isGroup) return;
+              const grp = gInfo.get(node.l1Anchor);
+              const target = grp && grp.savedPos;
+              if (!target) return;
+              node.vx += (target.x - node.x) * 0.06 * alpha;
+              node.vy += (target.y - node.y) * 0.06 * alpha;
+            });
+          })
+          .stop();
+        for (let i = 0; i < 300; i++) { d3sim.tick(); if (d3sim.alpha() < 0.001) break; }
+      }
+      d3Nodes.forEach(n => posStore.set(n.id, { x: n.x, y: n.y }));
+    }
+    prevFilteredIds = curFilteredIds;
 
     // Degree on display set
     const degree = new Map();
@@ -1221,24 +1535,43 @@ function renderGraph(wrap, spec) {
       if (d.kind === 'group') {
         const grp = d.info;
         const totalConns = groupConns.get(d.gid) || grp.members.length;
-        const sz = Math.max(22, Math.min(72, 14 + Math.sqrt(totalConns) * 4));
+        const sz = Math.max(28, Math.min(80, 16 + Math.sqrt(totalConns) * 4)) * nodeSizeScale;
         const isL1 = grp.level === 1;
+        const gpos = posStore.get(d.gid);
+        const gc = grp.color || '#2E9CDB';
         return {
           id: d.gid,
-          name: (isL1 ? '◆ ' : '◇ ') + grp.displayLabel,
-          symbol: isL1 ? 'diamond' : 'pin',
+          name: `L${grp.level} ${grp.displayLabel}`,
+          symbol: 'circle',
           symbolSize: sz,
-          itemStyle: { color: grp.color || '#2E9CDB', borderColor: '#333', borderWidth: isL1 ? 2 : 1, opacity: nodeOpacity },
-          label: { show: true, position: 'inside', fontSize: nodeLabelFontSize, fontWeight: 'bold', color: '#ffffff' },
+          ...(gpos ? { x: gpos.x, y: gpos.y } : {}),
+          // Solid filled circle: groups are visually prominent, leaves are hollow.
+          // Border thickness signals depth — L1 thicker than L2.
+          itemStyle: { color: gc, borderColor: '#ffffff', borderWidth: isL1 ? 2 : 1, opacity: nodeOpacity },
+          label: {
+            show: true, position: 'inside',
+            formatter: `{lv|L${grp.level}}\n{nm|${grp.displayLabel}}\n{ct|(${grp.members.length})}`,
+            rich: {
+              lv: { fontSize: nodeLabelFontSize + 4, fontWeight: 'bold', color: '#ffffff',
+                    textBorderColor: gc, textBorderWidth: 1, lineHeight: nodeLabelFontSize + 7,
+                    align: 'center' },
+              nm: { fontSize: nodeLabelFontSize, fontWeight: 'bold', color: '#ffffff',
+                    textBorderColor: gc, textBorderWidth: 1 },
+              ct: { fontSize: nodeLabelFontSize, color: 'rgba(255,255,255,0.85)',
+                    textBorderColor: gc, textBorderWidth: 1, align: 'center',
+                    lineHeight: nodeLabelFontSize + 4 },
+            },
+          },
           _isGroup: true, _gid: d.gid,
         };
       }
       const n = d.node;
       const id = n.id;
       const deg = degree.get(id) || 1;
-      const sz = n.size || (n.value != null
+      const szBase = n.size || (n.value != null
         ? Math.max(16, Math.min(72, Math.sqrt(n.value) * 4))
         : Math.max(10, Math.min(56, 8 + Math.sqrt(deg) * 4)));
+      const sz = szBase * nodeSizeScale;
       const role = (sourceSet.has(id) && destSet.has(id)) ? 'both' : sourceSet.has(id) ? 'source' : 'dest';
       const l1gid = idToL1Gid.get(id);
       const l2gid = idToL2Gid.get(id);
@@ -1247,23 +1580,27 @@ function renderGraph(wrap, spec) {
       const inGroup = inExpL1 || inExpL2;
       const groupGid = inExpL2 ? l2gid : (inExpL1 ? l1gid : null);
       const communityColor = l1gid ? l1Colors.get(l1gid) : null;
-      const borderColor = inExpL2 ? '#e63946' : (inExpL1 && communityColor ? communityColor : null);
+      // Leaf nodes are hollow: the border color carries their identity.
+      // Inside an expanded group → community color border; ungrouped → role color.
+      const leafColor = useColorByCategory ? getNodeColor(id) : (n.color || communityColor || ROLE_COLOR[role]);
+      const storedPos = posStore.get(id);
       return {
         id,
         name: n.name || id,
         symbolSize: sz,
+        ...(storedPos ? { x: storedPos.x, y: storedPos.y } : {}),
         itemStyle: {
-          color: useColorByCategory ? getNodeColor(id) : (n.color || communityColor || ROLE_COLOR[role]),
-          borderColor,
-          borderWidth: inGroup ? 2.5 : 0,
+          color: leafFillWhite ? '#ffffff' : 'transparent',
+          borderColor: leafColor,
+          borderWidth: inGroup ? 2.5 : 1.5,
           opacity: nodeOpacity,
         },
         label: {
-          show: deg >= labelCutoff || inGroup,
+          show: !(inExpL2 && !showTwinLabels) && (deg >= labelCutoff || inGroup),
           position: 'inside',
           fontSize: nodeLabelFontSize,
-          color: '#ffffff',
-          textBorderColor: borderColor || t.text,
+          color: leafColor,
+          textBorderColor: '#ffffff',
           textBorderWidth: 2,
           fontWeight: inGroup ? 'bold' : 'normal',
         },
@@ -1314,8 +1651,9 @@ function renderGraph(wrap, spec) {
       },
       legend: { show: false },
       series: [{
+        id: 'graph-main',
         type: 'graph',
-        layout: spec.layout || 'force',
+        layout: 'none',
         data: nodes,
         links: echLinks,
         roam: true,
@@ -1323,11 +1661,10 @@ function renderGraph(wrap, spec) {
         edgeLabel: { show: false, fontSize: 10 },
         edgeSymbol: (directed && showArrowheads) ? ['none', 'arrow'] : ['none', 'none'],
         lineStyle: { curveness: spec.curved ? 0.2 : 0 },
-        force: { repulsion: 200, edgeLength: [50, 180], gravity: 0.05 },
         emphasis: { focus: 'adjacency', lineStyle: { width: 4 }, edgeLabel: { show: true, fontSize: 10 } },
       }],
     };
-    ec.setOption(option, true);
+    ec.setOption(option, { replaceMerge: ['series'] });
   }
 
   rerender();
@@ -1336,8 +1673,12 @@ function renderGraph(wrap, spec) {
     if (params.dataType !== 'node') return;
     const d = params.data;
     if (!d) return;
-    if (d._isGroup) { gInfo.get(d._gid).expanded = true; rerender(); }
-    else if (d._inGroup) { gInfo.get(d._groupGid).expanded = false; rerender(); }
+    if (d._isGroup) {
+      const grp = gInfo.get(d._gid);
+      grp.savedPos = posStore.get(d._gid);
+      grp.expanded = true;
+      rerender();
+    } else if (d._inGroup) { gInfo.get(d._groupGid).expanded = false; rerender(); }
   });
 
   window.addEventListener('resize', () => ec.resize());
