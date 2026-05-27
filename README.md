@@ -5,7 +5,7 @@ An [MCP (Model Context Protocol)](https://modelcontextprotocol.io) server that g
 ## Live MCP endpoint
 
 ```
-https://YOUR-APP.up.railway.app/sse
+https://llm-data-explorer-production.up.railway.app/sse
 ```
 
 > **Deploy your own:** See [Railway deployment](#deploy-your-own) below.
@@ -22,7 +22,7 @@ Edit `%APPDATA%\Claude\claude_desktop_config.json` (Windows) or `~/Library/Appli
 {
   "mcpServers": {
     "chart-plugins": {
-      "url": "https://YOUR-APP.up.railway.app/sse"
+      "url": "https://llm-data-explorer-production.up.railway.app/sse"
     }
   }
 }
