@@ -34,7 +34,85 @@
       "Bash(actor)",
       "Bash(python e:/multi-agent/llm-data-explorer/chart_plugins/_build_swimlane.py)",
       "Bash(Get-ChildItem -Path \"e:\\\\multi-agent\\\\llm-data-explorer\" -Recurse -Directory)",
-      "Bash(Select-Object -ExpandProperty FullName)"
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(Get-ChildItem -Path \"e:\\\\multi-agent\\\\llm-data-explorer\" -Recurse -ErrorAction SilentlyContinue)",
+      "Bash(Select-Object FullName)",
+      "Bash(node -e \"const d3=require\\('d3'\\); console.log\\(typeof d3.polygonHull, typeof d3.polygonCentroid\\);\")",
+      "Bash(curl -s \"https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js\")",
+      "Bash(python -c \" *)",
+      "Read(//c/temp/**)",
+      "Bash(python3 -c ' *)",
+      "Bash(python e:\\\\multi-agent\\\\llm-data-explorer\\\\_fix_timearcs_gl.py)",
+      "Bash(python \"e:\\\\multi-agent\\\\llm-data-explorer\\\\_fix_timearcs_gl.py\")",
+      "Bash(del \"e:\\\\multi-agent\\\\llm-data-explorer\\\\_fix_timearcs_gl.py\")",
+      "Bash(python \"e:\\\\multi-agent\\\\llm-data-explorer\\\\_fix_timearcs_layout.py\")",
+      "Bash(python \"e:\\\\multi-agent\\\\llm-data-explorer\\\\_fix_timearcs_axes.py\")",
+      "Bash(python \"e:\\\\multi-agent\\\\llm-data-explorer\\\\_fix_timearcs_final.py\")",
+      "Bash(Remove-Item \"e:\\\\multi-agent\\\\llm-data-explorer\\\\_fix_timearcs_final.py\" -ErrorAction SilentlyContinue)",
+      "Bash(Remove-Item \"e:\\\\multi-agent\\\\llm-data-explorer\\\\_fix_timearcs_axes.py\" -ErrorAction SilentlyContinue)",
+      "Bash(Write-Host \"cleaned\")",
+      "Bash(python \"e:\\\\multi-agent\\\\llm-data-explorer\\\\_fix_resize_observer.py\")",
+      "Bash(python \"e:\\\\multi-agent\\\\llm-data-explorer\\\\_fix_resize_twostep.py\")",
+      "Bash(python \"e:\\\\multi-agent\\\\llm-data-explorer\\\\_fix_scroll_container.py\")",
+      "Bash(python \"e:\\\\multi-agent\\\\llm-data-explorer\\\\_fix_abspos.py\")",
+      "Bash(ls ~/.claude/projects/ 2>/dev/null | head -20)",
+      "Read(//c/Users/ivory/.claude/projects/**)",
+      "Bash(awk '{print $2}')",
+      "Bash(python3 -)",
+      "Bash(curl -s -X POST http://127.0.0.1:8787/query *)",
+      "PowerShell([Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType=WindowsRuntime] | Out-Null; [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType=WindowsRuntime] | Out-Null; $xd = New-Object Windows.Data.Xml.Dom.XmlDocument; $xd.LoadXml\\('<toast><visual><binding template=\"ToastText01\"><text id=\"1\">Claude Code finished</text></binding></visual></toast>'\\); [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier\\('Claude Code'\\).Show\\(\\(New-Object Windows.UI.Notifications.ToastNotification\\($xd\\)\\)\\); Write-Host \"Toast sent OK\")",
+      "PowerShell('{\"message\":\"Permission needed: Bash\\(rm -rf /tmp/test\\)\"}' | powershell -Command { $raw = [Console]::In.ReadToEnd\\(\\); try { $j = $raw | ConvertFrom-Json; $msg = [System.Security.SecurityElement]::Escape\\([string]$j.message\\) } catch { $msg = 'Attention needed' }; [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType=WindowsRuntime] | Out-Null; [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType=WindowsRuntime] | Out-Null; $xd = New-Object Windows.Data.Xml.Dom.XmlDocument; $xd.LoadXml\\(\"<toast><visual><binding template='ToastText02'><text id='1'>Claude Code</text><text id='2'>$msg</text></binding></visual></toast>\"\\); [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier\\('Claude Code'\\).Show\\(\\(New-Object Windows.UI.Notifications.ToastNotification\\($xd\\)\\)\\); Write-Host \"Notification toast sent OK\" })",
+      "Bash(node -e \"const j=JSON.parse\\(require\\('fs'\\).readFileSync\\('e:/multi-agent/llm-data-explorer/chart_plugins/timearcs.json','utf8'\\)\\); const s=j.renderScript; const idx=s.indexOf\\('wrap.style'\\); console.log\\(s.substring\\(idx, idx+600\\)\\);\")",
+      "Bash(node -e \"const j=JSON.parse\\(require\\('fs'\\).readFileSync\\('e:/multi-agent/llm-data-explorer/chart_plugins/timearcs-gl.json','utf8'\\)\\); const s=j.renderScript; const idx=s.indexOf\\('wrap.style'\\); console.log\\(s.substring\\(idx, idx+800\\)\\);\")",
+      "PowerShell(Get-Command bash -ErrorAction SilentlyContinue)",
+      "Bash(node -e \"const j=JSON.parse\\(require\\('fs'\\).readFileSync\\('e:/multi-agent/llm-data-explorer/chart_plugins/timearcs.json','utf8'\\)\\); const s=j.renderScript; const idx=s.indexOf\\('wrap.innerHTML='\\); console.log\\(s.substring\\(idx, idx+800\\)\\);\")",
+      "Bash(node -e \"const j=JSON.parse\\(require\\('fs'\\).readFileSync\\('e:/multi-agent/llm-data-explorer/chart_plugins/timearcs-gl.json','utf8'\\)\\); const s=j.renderScript; const idx=s.indexOf\\('wrap.innerHTML'\\); console.log\\(s.substring\\(idx, idx+1000\\)\\);\")",
+      "Bash(node -e \"const fs=require\\('fs'\\); const html=fs.readFileSync\\('e:/multi-agent/llm-data-explorer/data-explorer.html','utf8'\\); const idx=html.indexOf\\('chartWrap'\\); console.log\\(html.substring\\(idx-100, idx+500\\)\\);\")",
+      "Bash(node -e \"const fs=require\\('fs'\\); const html=fs.readFileSync\\('e:/multi-agent/llm-data-explorer/data-explorer.html','utf8'\\); const m=html.match\\(/chartWrap[^\\\\\"']*[\\\\\"'][^\\\\\"']+[\\\\\"']/g\\); m && m.slice\\(0,10\\).forEach\\(x=>console.log\\(x\\)\\);\")",
+      "Bash(node -e \"const fs=require\\('fs'\\); const html=fs.readFileSync\\('e:/multi-agent/llm-data-explorer/data-explorer.html','utf8'\\); const idx=html.indexOf\\('chart-wrap'\\); if\\(idx>=0\\) console.log\\(html.substring\\(idx-200, idx+800\\)\\); else console.log\\('not found, searching renderGraph...'\\); const idx2=html.indexOf\\('renderGraph'\\); console.log\\(html.substring\\(idx2-100, idx2+400\\)\\);\")",
+      "PowerShell(echo '{}' | powershell.exe -NonInteractive -NoProfile -File \"e:\\\\multi-agent\\\\llm-data-explorer\\\\.claude\\\\notify_done.ps1\"; Write-Host \"Exit: $LASTEXITCODE\")",
+      "PowerShell(echo '{\"message\":\"Permission needed: Bash\\(curl http://example.com\\)\"}' | powershell.exe -NonInteractive -NoProfile -File \"e:\\\\multi-agent\\\\llm-data-explorer\\\\.claude\\\\notify_permission.ps1\"; Write-Host \"Exit: $LASTEXITCODE\")",
+      "PowerShell($s = Get-Content \"e:\\\\multi-agent\\\\llm-data-explorer\\\\.claude\\\\settings.json\" -Raw | ConvertFrom-Json; $s.hooks.Notification[0].hooks[0].command; $s.hooks.Stop[0].hooks[0].command)",
+      "Bash(dir \"e:\\\\multi-agent\\\\llm-data-explorer\")",
+      "Bash(python gen_dynet3d.py)",
+      "Bash(python -c \"import json; d=json.load\\(open\\('chart_plugins/dynet3d.json',encoding='utf-8'\\)\\); print\\('type:', d['type']\\); print\\('renderScript length:', len\\(d['renderScript']\\)\\); print\\('starts with:', d['renderScript'][:60]\\); print\\('ends with:', d['renderScript'][-60:]\\)\")",
+      "Bash(python -c \"import json; d=json.load\\(open\\('chart_plugins/graph.json',encoding='utf-8'\\)\\); print\\('type:', d['type']\\); print\\('renderScript length:', len\\(d['renderScript']\\)\\); print\\('valid JSON: yes'\\)\")",
+      "Bash(python3 -m pip show fastmcp)",
+      "Bash(python3 -c \"import fastmcp; help\\(fastmcp.FastMCP.run\\)\")",
+      "Bash(python3 -c \"from fastmcp.server.mixins.transport import Transport; print\\(Transport.__args__ if hasattr\\(Transport, '__args__'\\) else 'N/A'\\)\")",
+      "Bash(python3 -c \"import inspect, fastmcp; src = inspect.getsource\\(fastmcp.FastMCP.run\\); print\\(src[:800]\\)\")",
+      "Bash(python3 -c \"import inspect, fastmcp; src = inspect.getsource\\(fastmcp.FastMCP.run_async\\); print\\(src[:1500]\\)\")",
+      "Bash(python3 -c \"import inspect, fastmcp; src = inspect.getsource\\(fastmcp.FastMCP.run_http_async\\); print\\(src[:800]\\)\")",
+      "Bash(timeout 5 python3 mcp_server/server.py)"
+    ],
+    "additionalDirectories": [
+      "e:\\multi-agent\\llm-data-explorer"
+    ]
+  },
+  "hooks": {
+    "Notification": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -NonInteractive -NoProfile -File \"e:\\multi-agent\\llm-data-explorer\\.claude\\notify_permission.ps1\"",
+            "async": true
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -NonInteractive -NoProfile -File \"e:\\multi-agent\\llm-data-explorer\\.claude\\notify_done.ps1\"",
+            "async": true
+          }
+        ]
+      }
     ]
   }
 }
