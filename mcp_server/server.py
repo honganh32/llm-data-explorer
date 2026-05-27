@@ -6,7 +6,7 @@ PLUGINS_DIR = Path(os.environ.get("PLUGINS_DIR", str(Path(__file__).parent.paren
 
 def load_plugins() -> dict:
     plugins = {}
-    for f in sorted(PLUGINS_DIR.glob("*.json")):
+    for f in sorted(f for f in PLUGINS_DIR.glob("*.json") if not f.stem.startswith("_")):
         try:
             p = json.loads(f.read_text(encoding="utf-8"))
             if "type" in p:

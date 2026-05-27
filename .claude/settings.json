@@ -84,7 +84,8 @@
       "Bash(python3 -c \"import inspect, fastmcp; src = inspect.getsource\\(fastmcp.FastMCP.run_async\\); print\\(src[:1500]\\)\")",
       "Bash(python3 -c \"import inspect, fastmcp; src = inspect.getsource\\(fastmcp.FastMCP.run_http_async\\); print\\(src[:800]\\)\")",
       "Bash(timeout 5 python3 mcp_server/server.py)",
-      "Bash(python mcp_server/validate_plugin.py chart_plugins/)"
+      "Bash(python mcp_server/validate_plugin.py chart_plugins/)",
+      "Bash(python -c \"from mcp_server.server import PLUGINS; print\\(len\\(PLUGINS\\), 'plugins loaded'\\); print\\('_template' in PLUGINS or 'YOUR_CHART_TYPE' in PLUGINS\\)\")"
     ],
     "additionalDirectories": [
       "e:\\multi-agent\\llm-data-explorer"
