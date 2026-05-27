@@ -139,6 +139,12 @@
   .db-label { font-size: 12px; color: var(--text3); white-space: nowrap; }
   .db-select { font-size: 13px; padding: 5px 10px; border: 0.5px solid var(--border2); border-radius: var(--radius-sm); background: var(--bg2); color: var(--text); font-family: var(--font); cursor: pointer; outline: none; max-width: 200px; }
   .db-select:focus { border-color: var(--accent); }
+  .chart-loading { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; padding:32px 24px; }
+  .chart-loading-spinner { width:22px; height:22px; border:2.5px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:chart-spin 0.75s linear infinite; flex-shrink:0; }
+  @keyframes chart-spin { to { transform:rotate(360deg); } }
+  .chart-loading-title { font-size:12px; font-weight:500; color:var(--text2); }
+  .chart-loading-status { font-size:11px; color:var(--text3); }
+  .chart-loading-rows { font-size:11px; color:var(--text3); font-family:var(--mono); min-height:14px; }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
@@ -252,6 +258,12 @@ const CHART_COLORS = [
   '#E8833A','#E85858','#9B59B6','#27AE60','#F39C12','#1ABC9C',
   '#3498DB','#E74C3C','#2ECC71','#F1C40F','#8E44AD'
 ];
+function hexToRgba(hex, alpha) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
 
 // Returns '#000000' for light backgrounds, '#ffffff' for dark ones (WCAG luminance).
 function contrastColor(hex) {
@@ -648,7 +660,467 @@ function renderECharts(wrap, spec) {
   window.addEventListener('resize', () => ec.resize());
 }
 
-// ── Force-graph renderer with twin collapsing ────────────────────────────────
+// ── Graph grouping helpers ────────────────────────────────────────────────────
+
+function detectAttributeFields(nodes) {
+  if (!nodes.length) return [];
+  const SKIP = new Set(['id', 'name', 'label', 'size', 'value', 'color', 'x', 'y', 'z', 'fx', 'fy', 'index', 'vx', 'vy']);
+  const candidates = [];
+  for (const key of Object.keys(nodes[0])) {
+    if (SKIP.has(key)) continue;
+    const vals = new Set();
+    for (const n of nodes) {
+      const v = n[key];
+      if (v != null && v !== '') vals.add(String(v));
+    }
+    const card = vals.size;
+    if (card >= 2 && card <= Math.min(Math.floor(nodes.length * 0.5), 20))
+      candidates.push({ field: key, cardinality: card });
+  }
+  return candidates.sort((a, b) => a.cardinality - b.cardinality);
+}
+
+function louvainCommunities(nodes, links) {
+  if (!nodes.length) return new Map();
+  const ids = nodes.map(n => n.id);
+  const idSet = new Set(ids);
+  const adj = new Map(ids.map(id => [id, new Map()]));
+  let totalW = 0;
+  links.forEach(l => {
+    if (!idSet.has(l.source) || !idSet.has(l.target) || l.source === l.target) return;
+    const w = +(l.value || 1);
+    adj.get(l.source).set(l.target, (adj.get(l.source).get(l.target) || 0) + w);
+    adj.get(l.target).set(l.source, (adj.get(l.target).get(l.source) || 0) + w);
+    totalW += w;
+  });
+  if (totalW === 0) return new Map(ids.map(id => [id, id]));
+  const m = totalW;
+  const ki = new Map(ids.map(id => [id, [...adj.get(id).values()].reduce((s, w) => s + w, 0)]));
+  const community = new Map(ids.map(id => [id, id]));
+  const commSumTot = new Map(ids.map(id => [id, ki.get(id)]));
+  const sortedIds = [...ids].sort();
+  let improved = true, maxIters = 20;
+  while (improved && maxIters-- > 0) {
+    improved = false;
+    for (const id of sortedIds) {
+      const currComm = community.get(id);
+      const ki_val = ki.get(id);
+      const sumTot_curr = commSumTot.get(currComm) || 0;
+      let k_i_in_curr = 0;
+      const neighCommW = new Map();
+      for (const [nid, w] of adj.get(id)) {
+        const nc = community.get(nid);
+        if (nc === currComm) k_i_in_curr += w;
+        else neighCommW.set(nc, (neighCommW.get(nc) || 0) + w);
+      }
+      let bestGain = 1e-9, bestComm = currComm;
+      for (const [nc, k_i_in_new] of neighCommW) {
+        const sumTot_new = commSumTot.get(nc) || 0;
+        const gain = k_i_in_new - (sumTot_new * ki_val) / (2 * m)
+                   - k_i_in_curr + ((sumTot_curr - ki_val) * ki_val) / (2 * m);
+        if (gain > bestGain) { bestGain = gain; bestComm = nc; }
+      }
+      if (bestComm !== currComm) {
+        commSumTot.set(currComm, (commSumTot.get(currComm) || 0) - ki_val);
+        commSumTot.set(bestComm, (commSumTot.get(bestComm) || 0) + ki_val);
+        community.set(id, bestComm);
+        improved = true;
+      }
+    }
+  }
+  return community;
+}
+
+// ── Method A: multi-level attribute grouping ─────────────────────────────────
+// Uses each qualifying attribute field (ascending cardinality) as a successive
+// nesting level. L2 nodes are scoped within each L1 group, L3 within L2, etc.
+function buildAttributeGroups(allNodes, links, COLORS) {
+  const attrFields = detectAttributeFields(allNodes);
+  if (!attrFields.length) return null;
+
+  const gInfo = new Map();
+  const l1Colors = new Map();
+  const levels = [];          // levels[i] = Map<nodeId, gid> for depth i+1
+  const groupingFields = [];
+  let gIdx = 0;
+
+  const nodeById = new Map(allNodes.map(n => [n.id, n]));
+  // scopeMap: parentGid (null = root) → [nodeIds] reachable from that scope
+  let scopeMap = new Map([[null, allNodes.map(n => n.id)]]);
+
+  for (const { field } of attrFields) {
+    const idToGid = new Map();
+    const nextScopeMap = new Map();
+
+    for (const [parentGid, nodeIds] of scopeMap) {
+      const byVal = new Map();
+      for (const id of nodeIds) {
+        const val = nodeById.get(id)?.[field];
+        if (val != null && val !== '') {
+          const key = String(val);
+          if (!byVal.has(key)) byVal.set(key, []);
+          byVal.get(key).push(id);
+        }
+      }
+      // Need at least 2 non-singleton partitions within this scope
+      if ([...byVal.values()].filter(m => m.length >= 2).length < 2) continue;
+
+      let localColorIdx = 0;
+      for (const [key, members] of byVal) {
+        if (members.length < 2) continue;
+        gIdx++;
+        const level = levels.length + 1;
+        const gid = `__l${level}_${gIdx}`;
+        const color = level === 1
+          ? COLORS[localColorIdx % COLORS.length]
+          : (parentGid ? (gInfo.get(parentGid)?.color || COLORS[localColorIdx % COLORS.length]) : COLORS[localColorIdx % COLORS.length]);
+        localColorIdx++;
+        gInfo.set(gid, { kind: 'attribute', level, field, fieldValue: key, members, subGroups: [], parentGid: parentGid || null, expanded: false, displayLabel: `${field}: ${key}`, color });
+        if (parentGid && gInfo.has(parentGid)) gInfo.get(parentGid).subGroups.push(gid);
+        if (level === 1) l1Colors.set(gid, color);
+        members.forEach(id => idToGid.set(id, gid));
+        nextScopeMap.set(gid, members);
+      }
+    }
+
+    if (!idToGid.size) break;
+    levels.push(idToGid);
+    groupingFields.push(field);
+    scopeMap = nextScopeMap;
+    if (new Set(idToGid.values()).size < 2) break;
+  }
+
+  if (!levels.length) return null;
+  return { levels, gInfo, l1Colors, groupingMethod: 'attribute', groupingFields };
+}
+
+// ── Method B: Louvain community detection → structural twin sub-groups ────────
+function buildLouvainGroups(allNodes, links, COLORS) {
+  const gInfo = new Map();
+  const l1Colors = new Map();
+  const idToL1Gid = new Map();
+  const idToL2Gid = new Map();
+  let gIdx = 0;
+
+  // L1: Louvain communities
+  const commMap = louvainCommunities(allNodes, links);
+  const commSizes = new Map();
+  commMap.forEach(c => commSizes.set(c, (commSizes.get(c) || 0) + 1));
+  const validComms = new Set(
+    [...commSizes.entries()]
+      .filter(([, sz]) => sz >= 3)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 20)
+      .map(([c]) => c)
+  );
+  if (validComms.size < 2) return null;
+
+  const l1Map = new Map();
+  commMap.forEach((c, id) => { if (validComms.has(c)) { if (!l1Map.has(c)) l1Map.set(c, []); l1Map.get(c).push(id); } });
+  let colorIdx = 0;
+  for (const members of l1Map.values()) {
+    if (members.length < 3) continue;
+    gIdx++;
+    const gid = '__l1_' + gIdx;
+    const color = COLORS[colorIdx++ % COLORS.length];
+    gInfo.set(gid, { kind: 'louvain', level: 1, members, subGroups: [], parentGid: null, expanded: false, displayLabel: 'Community ' + colorIdx, color, communityNum: colorIdx });
+    l1Colors.set(gid, color);
+    members.forEach(id => idToL1Gid.set(id, gid));
+  }
+
+  // L2: structural twins scoped within each L1 community
+  const sigSet = new Map(allNodes.map(n => [n.id, new Set()]));
+  links.forEach(l => {
+    const lab = l.label || '';
+    if (sigSet.has(l.source)) sigSet.get(l.source).add(l.target + '|' + lab);
+    if (sigSet.has(l.target)) sigSet.get(l.target).add(l.source + '|' + lab);
+  });
+  const bySig = new Map();
+  allNodes.forEach(n => {
+    const l1g = idToL1Gid.get(n.id) || '__none__';
+    const sig = l1g + '::' + [...sigSet.get(n.id)].sort().join('||');
+    if (!bySig.has(sig)) bySig.set(sig, []);
+    bySig.get(sig).push(n.id);
+  });
+  const l1TwinIdx = new Map();
+  for (const members of bySig.values()) {
+    if (members.length < 2) continue;
+    gIdx++;
+    const gid = '__l2_' + gIdx;
+    const parentGid = idToL1Gid.get(members[0]) || null;
+    const color = parentGid ? (l1Colors.get(parentGid) || '#2E9CDB') : '#2E9CDB';
+    const twinNum = (l1TwinIdx.get(parentGid) || 0) + 1;
+    l1TwinIdx.set(parentGid, twinNum);
+    const parentCommNum = parentGid && gInfo.has(parentGid) ? gInfo.get(parentGid).communityNum : null;
+    const twinName = parentCommNum != null
+      ? `Community ${parentCommNum} - Twins ${twinNum}`
+      : `Twins ${twinNum}`;
+    gInfo.set(gid, { kind: 'twin', level: 2, members, subGroups: [], parentGid, expanded: false, displayLabel: twinName, color });
+    if (parentGid && gInfo.has(parentGid)) gInfo.get(parentGid).subGroups.push(gid);
+    members.forEach(id => idToL2Gid.set(id, gid));
+  }
+
+  return { levels: [idToL1Gid, idToL2Gid], gInfo, l1Colors, groupingMethod: 'louvain', groupingFields: null };
+}
+
+// ── Method C: k-core decomposition ───────────────────────────────────────────
+function buildKCoreGroups(allNodes, links, COLORS) {
+  if (allNodes.length < 4) return null;
+
+  const adj = new Map(allNodes.map(n => [n.id, new Set()]));
+  links.forEach(l => { adj.get(l.source)?.add(l.target); adj.get(l.target)?.add(l.source); });
+
+  const coreness = new Map(allNodes.map(n => [n.id, 0]));
+  const workDeg = new Map();
+  adj.forEach((nb, id) => workDeg.set(id, nb.size));
+
+  const remaining = new Set(allNodes.map(n => n.id));
+  let k = 1;
+  while (remaining.size > 0) {
+    let removed;
+    do {
+      removed = false;
+      for (const id of [...remaining]) {
+        if ((workDeg.get(id) || 0) < k) {
+          remaining.delete(id);
+          coreness.set(id, k - 1);
+          adj.get(id).forEach(nb => { if (remaining.has(nb)) workDeg.set(nb, (workDeg.get(nb) || 1) - 1); });
+          removed = true;
+        }
+      }
+    } while (removed);
+    if (remaining.size > 0) k++;
+  }
+
+  const maxCore = Math.max(0, ...coreness.values());
+  if (maxCore < 2) return null;
+
+  const distinctVals = [...new Set(coreness.values())].sort((a, b) => a - b);
+  if (distinctVals.length < 2) return null;
+
+  // Bin into at most 8 shells so dense graphs don't produce too many groups
+  const numBuckets = Math.min(8, distinctVals.length);
+  const getBucket = c => Math.floor(distinctVals.indexOf(c) * numBuckets / distinctVals.length);
+
+  const bucketMeta = new Map(); // bucketIdx -> { coreMin, coreMax, members }
+  coreness.forEach((c, id) => {
+    const b = getBucket(c);
+    if (!bucketMeta.has(b)) bucketMeta.set(b, { coreMin: c, coreMax: c, members: [] });
+    const bg = bucketMeta.get(b);
+    bg.coreMin = Math.min(bg.coreMin, c);
+    bg.coreMax = Math.max(bg.coreMax, c);
+    bg.members.push(id);
+  });
+
+  const sorted = [...bucketMeta.entries()].sort((a, b) => a[0] - b[0]);
+  if (sorted.length < 2) return null;
+
+  const gInfo = new Map();
+  const l1Colors = new Map();
+  const idToL1Gid = new Map();
+  let gIdx = 0;
+
+  sorted.forEach(([, bg], idx) => {
+    gIdx++;
+    const gid = '__kcore_' + gIdx;
+    const color = COLORS[idx % COLORS.length];
+    const label = bg.coreMin === 0 ? 'Periphery (k=0)'
+      : bg.coreMin === maxCore ? `Core (k=${maxCore})`
+      : bg.coreMin === bg.coreMax ? `Shell k=${bg.coreMin}`
+      : `Shells k=${bg.coreMin}–${bg.coreMax}`;
+    gInfo.set(gid, { kind: 'kcore', level: 1, members: bg.members, subGroups: [], parentGid: null, expanded: false, displayLabel: label, color });
+    l1Colors.set(gid, color);
+    bg.members.forEach(id => idToL1Gid.set(id, gid));
+  });
+
+  return { levels: [idToL1Gid], gInfo, l1Colors, groupingMethod: 'kcore', groupingFields: null };
+}
+
+// ── Method D: Label Propagation community detection ───────────────────────────
+// Each node iteratively adopts the majority label of its neighbors. Converges in
+// a few passes and often finds different boundaries than Louvain on ambiguous edges.
+function buildLabelPropGroups(allNodes, links, COLORS) {
+  if (allNodes.length < 4) return null;
+
+  const ids = allNodes.map(n => n.id);
+  const adj = new Map(ids.map(id => [id, []]));
+  links.forEach(l => { adj.get(l.source)?.push(l.target); adj.get(l.target)?.push(l.source); });
+
+  const label = new Map(ids.map(id => [id, id]));
+  for (let iter = 0; iter < 15; iter++) {
+    let changed = false;
+    // Deterministic shuffle via seeded sort to reduce arbitrary tie-breaking
+    const shuffled = [...ids].sort((a, b) => (a < b ? -1 : 1));
+    for (const id of shuffled) {
+      const neighbors = adj.get(id);
+      if (!neighbors.length) continue;
+      const freq = new Map();
+      neighbors.forEach(nb => { const l = label.get(nb); freq.set(l, (freq.get(l) || 0) + 1); });
+      const maxFreq = Math.max(...freq.values());
+      // Among tied labels pick the lexicographically smallest for reproducibility
+      const best = [...freq.entries()].filter(([, v]) => v === maxFreq).map(([k]) => k).sort()[0];
+      if (best !== label.get(id)) { label.set(id, best); changed = true; }
+    }
+    if (!changed) break;
+  }
+
+  const commMap = new Map();
+  label.forEach((comm, id) => { if (!commMap.has(comm)) commMap.set(comm, []); commMap.get(comm).push(id); });
+
+  const validComms = [...commMap.entries()]
+    .filter(([, m]) => m.length >= 3)
+    .sort((a, b) => b[1].length - a[1].length)
+    .slice(0, 20);
+  if (validComms.length < 2) return null;
+
+  const gInfo = new Map();
+  const l1Colors = new Map();
+  const idToL1Gid = new Map();
+  const idToL2Gid = new Map();
+  let gIdx = 0, colorIdx = 0;
+
+  for (const [, members] of validComms) {
+    gIdx++;
+    const gid = '__lp_' + gIdx;
+    const color = COLORS[colorIdx % COLORS.length];
+    colorIdx++;
+    gInfo.set(gid, { kind: 'labelprop', level: 1, members, subGroups: [], parentGid: null, expanded: false, displayLabel: 'LP Community ' + colorIdx, color, communityNum: colorIdx });
+    l1Colors.set(gid, color);
+    members.forEach(id => idToL1Gid.set(id, gid));
+  }
+
+  // L2: structural twins within each LP community (same logic as Louvain method)
+  const sigSet = new Map(allNodes.map(n => [n.id, new Set()]));
+  links.forEach(l => {
+    const lab = l.label || '';
+    if (sigSet.has(l.source)) sigSet.get(l.source).add(l.target + '|' + lab);
+    if (sigSet.has(l.target)) sigSet.get(l.target).add(l.source + '|' + lab);
+  });
+  const bySig = new Map();
+  allNodes.forEach(n => {
+    const l1g = idToL1Gid.get(n.id) || '__none__';
+    const sig = l1g + '::' + [...sigSet.get(n.id)].sort().join('||');
+    if (!bySig.has(sig)) bySig.set(sig, []);
+    bySig.get(sig).push(n.id);
+  });
+  const l1TwinIdx = new Map();
+  for (const members of bySig.values()) {
+    if (members.length < 2) continue;
+    gIdx++;
+    const gid = '__lp2_' + gIdx;
+    const parentGid = idToL1Gid.get(members[0]) || null;
+    const color = parentGid ? (l1Colors.get(parentGid) || '#2E9CDB') : '#2E9CDB';
+    const twinNum = (l1TwinIdx.get(parentGid) || 0) + 1;
+    l1TwinIdx.set(parentGid, twinNum);
+    const parentCommNum = parentGid && gInfo.has(parentGid) ? gInfo.get(parentGid).communityNum : null;
+    const twinName = parentCommNum != null ? `LP Comm ${parentCommNum} - Twins ${twinNum}` : `Twins ${twinNum}`;
+    gInfo.set(gid, { kind: 'twin', level: 2, members, subGroups: [], parentGid, expanded: false, displayLabel: twinName, color });
+    if (parentGid && gInfo.has(parentGid)) gInfo.get(parentGid).subGroups.push(gid);
+    members.forEach(id => idToL2Gid.set(id, gid));
+  }
+
+  return { levels: [idToL1Gid, idToL2Gid], gInfo, l1Colors, groupingMethod: 'labelprop', groupingFields: null };
+}
+
+// ── Method E: IP-address octet hierarchy ──────────────────────────────────────
+// Groups nodes by IPv4 prefix at each octet level: L1=x1, L2=x1.x2, L3=x1.x2.x3.
+// L4 would be individual IPs (singletons) so is never produced.
+// Works when node IDs are dotted-quad strings, or when a node attribute field
+// contains dotted-quad strings.
+function buildIPOctetGroups(allNodes, links, COLORS) {
+  if (!allNodes.length) return null;
+  const IPV4_RE = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
+
+  // Detect the IP field: node.id first, then any attribute field
+  let ipField = null;
+  if (allNodes.every(n => IPV4_RE.test(String(n.id)))) {
+    ipField = 'id';
+  } else {
+    const SKIP = new Set(['x','y','z','fx','fy','vx','vy','index','size','value','color']);
+    for (const key of Object.keys(allNodes[0])) {
+      if (SKIP.has(key)) continue;
+      const sample = allNodes.slice(0, 30);
+      if (sample.every(n => n[key] != null && IPV4_RE.test(String(n[key])))) {
+        ipField = key; break;
+      }
+    }
+  }
+  if (!ipField) return null;
+
+  const getIP = n => String(n[ipField] ?? n.id);
+
+  const gInfo = new Map();
+  const l1Colors = new Map();
+  const levels = [];
+  const usedFields = [];
+  let gIdx = 0;
+
+  const nodeById = new Map(allNodes.map(n => [n.id, n]));
+  let scopeMap = new Map([[null, allNodes.map(n => n.id)]]);
+
+  for (let octetIdx = 0; octetIdx < 4; octetIdx++) {
+    const idToGid = new Map();
+    const nextScopeMap = new Map();
+
+    for (const [parentGid, nodeIds] of scopeMap) {
+      const byPrefix = new Map();
+      for (const id of nodeIds) {
+        const octets = getIP(nodeById.get(id)).split('.');
+        const key = octets.slice(0, octetIdx + 1).join('.');
+        if (!byPrefix.has(key)) byPrefix.set(key, []);
+        byPrefix.get(key).push(id);
+      }
+
+      const nonSingleton = [...byPrefix.values()].filter(m => m.length >= 2);
+      if (nonSingleton.length < 2) continue;
+
+      let localColorIdx = 0;
+      for (const [key, members] of byPrefix) {
+        if (members.length < 2) continue;
+        gIdx++;
+        const level = levels.length + 1;
+        const gid = `__ip_l${level}_${gIdx}`;
+        const color = level === 1
+          ? COLORS[localColorIdx % COLORS.length]
+          : (parentGid ? gInfo.get(parentGid)?.color : COLORS[localColorIdx % COLORS.length]);
+        localColorIdx++;
+        gInfo.set(gid, {
+          kind: 'ipoctet', level, field: `x${octetIdx + 1}`, fieldValue: key,
+          members, subGroups: [], parentGid: parentGid || null, expanded: false,
+          displayLabel: key + '.*', color
+        });
+        if (parentGid && gInfo.has(parentGid)) gInfo.get(parentGid).subGroups.push(gid);
+        if (level === 1) l1Colors.set(gid, color);
+        members.forEach(id => idToGid.set(id, gid));
+        nextScopeMap.set(gid, members);
+      }
+    }
+
+    if (!idToGid.size) break;
+    levels.push(idToGid);
+    usedFields.push(`x${octetIdx + 1}`);
+    scopeMap = nextScopeMap;
+    if (new Set(idToGid.values()).size < 2) break;
+  }
+
+  if (!levels.length) return null;
+  return { levels, gInfo, l1Colors, groupingMethod: 'ipoctet', groupingFields: usedFields };
+}
+
+// ── Dispatcher: attribute first, then Louvain; or force a specific method ─────
+function buildHierarchicalGroups(allNodes, links, COLORS, forcedMethod) {
+  const empty = { levels: [], gInfo: new Map(), l1Colors: new Map(), groupingMethod: 'none', groupingFields: null };
+  if (forcedMethod === 'attribute') return buildAttributeGroups(allNodes, links, COLORS) || empty;
+  if (forcedMethod === 'louvain')   return buildLouvainGroups(allNodes, links, COLORS)   || empty;
+  if (forcedMethod === 'kcore')     return buildKCoreGroups(allNodes, links, COLORS)     || empty;
+  if (forcedMethod === 'labelprop') return buildLabelPropGroups(allNodes, links, COLORS)  || empty;
+  if (forcedMethod === 'ipoctet')   return buildIPOctetGroups(allNodes, links, COLORS)    || empty;
+  return buildAttributeGroups(allNodes, links, COLORS)
+      || buildLouvainGroups(allNodes, links, COLORS)
+      || empty;
+}
+
+// ── Force-graph renderer with hierarchical grouping ───────────────────────────
 function renderGraph(wrap, spec) {
   if (!wrap.style.height) wrap.style.height = '520px';
   wrap._chartSpec = spec;
@@ -661,43 +1133,59 @@ function renderGraph(wrap, spec) {
   const validIds = new Set(allNodes.map(n => n.id));
   const links = rawLinks.filter(l => validIds.has(l.source) && validIds.has(l.target));
 
-  // ── Twin pass: identical (partner|label) sets ───────────────────────────
-  const sigSet = new Map();
-  allNodes.forEach(n => sigSet.set(n.id, new Set()));
-  links.forEach(l => {
-    const lab = l.label || '';
-    sigSet.get(l.source).add(l.target + '|' + lab);
-    sigSet.get(l.target).add(l.source + '|' + lab);
-  });
-  const bySig = new Map();
-  allNodes.forEach(n => {
-    const k = [...sigSet.get(n.id)].sort().join('||');
-    if (!bySig.has(k)) bySig.set(k, []);
-    bySig.get(k).push(n.id);
-  });
-  const idToGid = new Map();
-  const gInfo = new Map();
-  let gIdx = 0;
-  for (const members of bySig.values()) {
-    if (members.length >= 2) {
-      gIdx++;
-      const gid = '__grp_' + gIdx;
-      gInfo.set(gid, { kind: 'twin', members, idx: gIdx, expanded: false,
-        displayLabel: 'Group ' + gIdx + ' (' + members.length + ')' });
-      members.forEach(m => idToGid.set(m, gid));
-    }
-  }
+  // ── Hierarchical grouping (mutable — can be swapped by the method toggle) ───
+  let activeGroupMethod = 'auto';
+  let { levels, gInfo, l1Colors, groupingMethod, groupingFields } =
+    buildHierarchicalGroups(allNodes, links, CHART_COLORS, activeGroupMethod);
+  let idToL1Gid = levels[0] || new Map();
+  let l1Count = [...gInfo.values()].filter(g => g.level === 1).length;
+  let l2Count = [...gInfo.values()].filter(g => g.level === 2).length;
 
   // ── Categories from link labels ─────────────────────────────────────────
   const categories = [...new Set(links.map(l => l.label).filter(Boolean))];
   const catColor = new Map(categories.map((c, i) => [c, CHART_COLORS[i % CHART_COLORS.length]]));
   const catVisible = new Map(categories.map(c => [c, true]));
 
-  // ── Precompute total connections per group (for node sizing) ─────────
-  const groupTotalConns = new Map();
-  for (const [gid, info] of gInfo) {
-    const memberSet = new Set(info.members);
-    groupTotalConns.set(gid, links.filter(l => memberSet.has(l.source) || memberSet.has(l.target)).length);
+  // ── Precompute connections per group (for node sizing) ───────────────
+  function computeGroupConns() {
+    const gc = new Map();
+    for (const [gid, grp] of gInfo) {
+      const mset = new Set(grp.members);
+      gc.set(gid, links.filter(l => mset.has(l.source) || mset.has(l.target)).length);
+    }
+    return gc;
+  }
+  let groupConns = computeGroupConns();
+
+  function buildGroupingNote() {
+    if (l1Count === 0 && l2Count === 0) return '';
+    let msg = '';
+    if (l1Count > 0) {
+      if (groupingMethod === 'attribute') {
+        const parts = (groupingFields || []).map((f, i) => {
+          const cnt = [...gInfo.values()].filter(g => g.level === i + 1).length;
+          return `"${f}" → ${cnt} L${i + 1} group${cnt !== 1 ? 's' : ''}`;
+        });
+        msg = 'Grouped by ' + parts.join(', ');
+      } else if (groupingMethod === 'ipoctet') {
+        const parts = (groupingFields || []).map((f, i) => {
+          const cnt = [...gInfo.values()].filter(g => g.level === i + 1).length;
+          return `${cnt} L${i + 1} (${f})`;
+        });
+        msg = 'IP hierarchy: ' + parts.join(', ');
+      } else if (groupingMethod === 'kcore') {
+        msg = l1Count + ' k-core shell' + (l1Count !== 1 ? 's' : '');
+      } else if (groupingMethod === 'labelprop') {
+        msg = l1Count + ' label-prop communit' + (l1Count > 1 ? 'ies' : 'y');
+        if (l2Count > 0) msg += ', ' + l2Count + ' twin sub-group' + (l2Count > 1 ? 's' : '');
+      } else {
+        msg = l1Count + ' Louvain communit' + (l1Count > 1 ? 'ies' : 'y');
+        if (l2Count > 0) msg += ', ' + l2Count + ' twin sub-group' + (l2Count > 1 ? 's' : '');
+      }
+    } else {
+      msg = l2Count + ' twin group' + (l2Count > 1 ? 's' : '');
+    }
+    return msg + ' — click a hollow circle to expand, click a filled node to collapse its group';
   }
 
   // ── Build wrap layout ─────────────────────────────────────────────────
@@ -708,12 +1196,11 @@ function renderGraph(wrap, spec) {
   // Hint bar (group count note)
   const hdr = document.createElement('div');
   hdr.style.cssText = 'flex:0 0 auto;padding:3px 0 2px;text-align:center;';
-  if (gIdx > 0) {
-    const note = document.createElement('div');
-    note.style.cssText = 'font-size:10px;color:var(--text3,#999);margin-bottom:2px;';
-    note.textContent = gIdx + ' collapsed group' + (gIdx > 1 ? 's' : '') + ' (twins + hub-leaves) — click ◆ node to expand, click red node to collapse';
-    hdr.appendChild(note);
-  }
+  let noteEl = document.createElement('div');
+  noteEl.style.cssText = 'font-size:10px;color:var(--text3,#999);margin-bottom:2px;';
+  noteEl.textContent = buildGroupingNote();
+  noteEl.style.display = (l1Count > 0 || l2Count > 0) ? '' : 'none';
+  hdr.appendChild(noteEl);
   wrap.appendChild(hdr);
 
   // Main row: chart canvas + right control panel
@@ -726,7 +1213,8 @@ function renderGraph(wrap, spec) {
   mainRow.appendChild(chartDiv);
 
   // ── Control panel ─────────────────────────────────────────────────────
-  let grpBtn = null, catBtn = null;
+  let grpBtn = null, catBtn = null, grpSec = null;
+  const methodBtns = new Map();
   const legendItems = [];
 
   const ctrlPanel = document.createElement('div');
@@ -759,6 +1247,23 @@ function renderGraph(wrap, spec) {
     b.textContent = lbl;
     return b;
   };
+
+  // Grouping method toggle
+  const grpMethodSec = mkPanelSection('Grouping');
+  [
+    { id: 'auto',      label: 'Auto (default)' },
+    { id: 'attribute', label: 'Attribute'       },
+    { id: 'louvain',   label: 'Louvain'         },
+    { id: 'kcore',     label: 'k-Core shells'   },
+    { id: 'labelprop', label: 'Label Prop'      },
+    { id: 'ipoctet',   label: 'IP Octets'       },
+  ].forEach(({ id, label }) => {
+    const b = mkBtn(label);
+    b.onclick = () => applyGrouping(id);
+    methodBtns.set(id, b);
+    grpMethodSec.appendChild(b);
+  });
+  ctrlPanel.appendChild(grpMethodSec);
 
   // Edge color & opacity section
   const edgeSec = mkPanelSection('Edges');
@@ -837,7 +1342,24 @@ function renderGraph(wrap, spec) {
   nodeOpacityRow.appendChild(nodeOpacityLabel);
   nodeOpacityRow.appendChild(nodeOpacitySlider);
   nodeSec.appendChild(nodeOpacityRow);
-  
+
+  const nodeSizeRow = document.createElement('div');
+  nodeSizeRow.style.cssText = 'display:flex;flex-direction:column;gap:3px;';
+  const nodeSizeLabel = document.createElement('div');
+  nodeSizeLabel.style.cssText = 'font-size:11px;color:var(--text2,#666);';
+  nodeSizeLabel.textContent = 'Node size';
+  const nodeSizeSlider = document.createElement('input');
+  nodeSizeSlider.type = 'range';
+  nodeSizeSlider.min = '0.1';
+  nodeSizeSlider.max = '1.0';
+  nodeSizeSlider.step = '0.05';
+  nodeSizeSlider.value = '0.2';
+  nodeSizeSlider.style.cssText = 'width:100%;cursor:pointer;';
+  nodeSizeSlider.oninput = () => { nodeSizeScale = parseFloat(nodeSizeSlider.value); rerender(); };
+  nodeSizeRow.appendChild(nodeSizeLabel);
+  nodeSizeRow.appendChild(nodeSizeSlider);
+  nodeSec.appendChild(nodeSizeRow);
+
   const nodeLabelRow = document.createElement('div');
   nodeLabelRow.style.cssText = 'display:flex;flex-direction:column;gap:3px;';
   const nodeLabelLabel = document.createElement('div');
@@ -854,6 +1376,29 @@ function renderGraph(wrap, spec) {
   nodeLabelRow.appendChild(nodeLabelLabel);
   nodeLabelRow.appendChild(nodeLabelSlider);
   nodeSec.appendChild(nodeLabelRow);
+
+  const twinLabelRow = document.createElement('label');
+  twinLabelRow.style.cssText = 'display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--text,#333);';
+  const twinLabelCb = document.createElement('input');
+  twinLabelCb.type = 'checkbox';
+  twinLabelCb.checked = false;
+  twinLabelCb.style.cursor = 'pointer';
+  twinLabelCb.onchange = () => { showTwinLabels = twinLabelCb.checked; rerender(); };
+  twinLabelRow.appendChild(twinLabelCb);
+  twinLabelRow.appendChild(document.createTextNode('Show twin node labels'));
+  nodeSec.appendChild(twinLabelRow);
+
+  const leafFillRow = document.createElement('label');
+  leafFillRow.style.cssText = 'display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--text,#333);';
+  const leafFillCb = document.createElement('input');
+  leafFillCb.type = 'checkbox';
+  leafFillCb.checked = true;
+  leafFillCb.style.cursor = 'pointer';
+  leafFillCb.onchange = () => { leafFillWhite = leafFillCb.checked; rerender(); };
+  leafFillRow.appendChild(leafFillCb);
+  leafFillRow.appendChild(document.createTextNode('Solid white leaf nodes'));
+  nodeSec.appendChild(leafFillRow);
+
   ctrlPanel.appendChild(nodeSec);
 
   // Arrow section
@@ -887,18 +1432,31 @@ function renderGraph(wrap, spec) {
   arrowSec.appendChild(arrowMinRow);
   ctrlPanel.appendChild(arrowSec);
 
-  // Groups section
-  if (gIdx > 0) {
-    const grpSec = mkPanelSection('Groups');
-    grpBtn = mkBtn('Expand all groups');
-    grpBtn.onclick = () => {
-      const anyC = [...gInfo.values()].some(g => !g.expanded);
-      for (const g of gInfo.values()) g.expanded = anyC;
-      rerender();
-    };
-    grpSec.appendChild(grpBtn);
-    ctrlPanel.appendChild(grpSec);
-  }
+  // Hierarchy section (always created; shown/hidden based on active grouping)
+  grpSec = mkPanelSection('Hierarchy');
+  grpBtn = mkBtn('Expand L1 groups');
+  grpBtn.onclick = () => {
+    const anyCollapsed = [...gInfo.values()].filter(g => g.level === 1).some(g => !g.expanded);
+    for (const [gid, g] of gInfo.entries()) {
+      if (g.level === 1) {
+        if (!g.expanded && anyCollapsed) g.savedPos = posStore.get(gid);
+        g.expanded = anyCollapsed;
+      }
+    }
+    rerender();
+  };
+  grpSec.appendChild(grpBtn);
+  const expandAllBtn = mkBtn('Expand all');
+  expandAllBtn.onclick = () => {
+    for (const [gid, g] of gInfo.entries()) { if (!g.expanded) g.savedPos = posStore.get(gid); g.expanded = true; }
+    rerender();
+  };
+  grpSec.appendChild(expandAllBtn);
+  const collapseAllBtn = mkBtn('Collapse all');
+  collapseAllBtn.onclick = () => { for (const g of gInfo.values()) g.expanded = false; rerender(); };
+  grpSec.appendChild(collapseAllBtn);
+  grpSec.style.display = (l1Count > 0 || l2Count > 0) ? '' : 'none';
+  ctrlPanel.appendChild(grpSec);
 
   // Categories section
   if (categories.length > 1) {
@@ -928,7 +1486,225 @@ function renderGraph(wrap, spec) {
   }
 
   const ec = echarts.init(chartDiv);
+
+  // ── Convex-hull group overlay ────────────────────────────────────────────
+  if (getComputedStyle(chartDiv).position === 'static') chartDiv.style.position = 'relative';
+  const hullCanvas = document.createElement('canvas');
+  hullCanvas.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;';
+  chartDiv.appendChild(hullCanvas);
+
+  // Stores computed hull polygons so the click handler can do hit-testing.
+  const hullPolys = []; // [{gid, poly, circle}]  poly=null means circle fallback
+
+  function redrawHulls() {
+    hullCanvas.width  = chartDiv.offsetWidth;
+    hullCanvas.height = chartDiv.offsetHeight;
+    const ctx = hullCanvas.getContext('2d');
+    ctx.clearRect(0, 0, hullCanvas.width, hullCanvas.height);
+    hullPolys.length = 0;
+
+    // Step 1 — get raw (pre-zoom) positions from ECharts item layout.
+    // These are in the series group's LOCAL coordinate space.
+    // We also track which IDs are currently rendered so the posStore fallback
+    // never supplies positions for nodes that aren't actually visible.
+    const localPos = new Map();
+    const displayedIds = new Set();
+    try {
+      const sm = ec.getModel().getSeriesByIndex(0);
+      if (sm) {
+        const dat = sm.getData();
+        for (let i = 0; i < dat.count(); i++) {
+          const id = dat.getId(i);
+          displayedIds.add(id);
+          const layout = dat.getItemLayout(i);
+          if (layout && isFinite(layout.x) && isFinite(layout.y))
+            localPos.set(id, [layout.x, layout.y]);
+        }
+      }
+    } catch (_) {}
+    // Fallback: use posStore, but ONLY for IDs that ECharts is actually rendering.
+    // This prevents stale positions for collapsed/hidden nodes from leaking through.
+    if (localPos.size === 0) {
+      for (const id of displayedIds) {
+        const pos = posStore.get(id);
+        if (pos) localPos.set(id, [pos.x, pos.y]);
+      }
+    } else {
+      // Partial fill: getItemLayout worked for some nodes; patch missing ones from posStore.
+      for (const id of displayedIds) {
+        if (!localPos.has(id)) {
+          const pos = posStore.get(id);
+          if (pos) localPos.set(id, [pos.x, pos.y]);
+        }
+      }
+    }
+    if (localPos.size === 0) return;
+
+    // Step 2 — build a local→screen transform by reading the series group's
+    // world transform.  This is what makes the hull follow zoom/pan correctly.
+    let toScreen = (x, y) => [x, y];
+    try {
+      const sm = ec.getModel().getSeriesByIndex(0);
+      const view = sm && ec.getViewOfSeriesModel(sm);
+      const g = view && view.group;
+      if (g) {
+        if (typeof g.transformCoordToGlobal === 'function') {
+          toScreen = (x, y) => g.transformCoordToGlobal(x, y);
+        } else {
+          const m = g.transform;
+          if (m) toScreen = (x, y) => [m[0]*x + m[2]*y + m[4], m[1]*x + m[3]*y + m[5]];
+        }
+      }
+    } catch (_) {}
+
+    // Step 3 — convert all local positions to screen pixels.
+    const idToPx = new Map();
+    for (const [id, [lx, ly]] of localPos) {
+      const [sx, sy] = toScreen(lx, ly);
+      if (isFinite(sx) && isFinite(sy)) idToPx.set(id, [sx, sy]);
+    }
+    if (idToPx.size === 0) return;
+
+    // A group's hull should only be drawn when the group itself AND every
+    // ancestor group is expanded — otherwise the group's members aren't visible.
+    const ancestorsExpanded = gid => {
+      const g = gInfo.get(gid);
+      if (!g) return false;
+      if (!g.expanded) return false;
+      return g.parentGid ? ancestorsExpanded(g.parentGid) : true;
+    };
+
+    // Sort so outer groups (lower level number) are drawn first (behind inner ones).
+    const sorted = [...gInfo.entries()]
+      .filter(([gid]) => ancestorsExpanded(gid))
+      .sort((a, b) => (a[1].level || 1) - (b[1].level || 1));
+
+    const PAD = 22;
+    for (const [gid, g] of sorted) {
+      const pts = [];
+      for (const mid of g.members)   { const p = idToPx.get(mid);  if (p) pts.push(p); }
+      for (const sgid of (g.subGroups || [])) { const p = idToPx.get(sgid); if (p) pts.push(p); }
+      if (pts.length === 0) continue;
+
+      const color = g.color || '#2E9CDB';
+      const isOuter = (g.level || 1) === 1;
+
+      let poly;
+      if (pts.length < 3) {
+        // 1-2 points: draw a circle instead of a hull
+        const cx = pts.reduce((s, p) => s + p[0], 0) / pts.length;
+        const cy = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(cx, cy, PAD + 18, 0, Math.PI * 2);
+        ctx.fillStyle   = hexToRgba(color, isOuter ? 0.08 : 0.13);
+        ctx.strokeStyle = hexToRgba(color, isOuter ? 0.40 : 0.60);
+        ctx.lineWidth   = isOuter ? 2 : 1.5;
+        if (!isOuter) ctx.setLineDash([5, 3]);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+
+        ctx.save();
+        ctx.font = `bold ${isOuter ? 11 : 10}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const lbl = g.displayLabel;
+        const tm  = ctx.measureText(lbl);
+        ctx.fillStyle = 'rgba(255,255,255,0.78)';
+        ctx.fillRect(cx - tm.width / 2 - 3, cy - PAD - 28, tm.width + 6, 15);
+        ctx.fillStyle = color;
+        ctx.fillText(lbl, cx, cy - PAD - 21);
+        ctx.restore();
+        hullPolys.push({ gid, poly: null, circle: { cx, cy, r: PAD + 18 } });
+        continue;
+      }
+
+      const hull = d3.polygonHull(pts);
+      if (!hull) continue;
+
+      const cx = d3.polygonCentroid(hull)[0];
+      const cy = d3.polygonCentroid(hull)[1];
+
+      // Expand each vertex outward from centroid by PAD pixels.
+      poly = hull.map(([px, py]) => {
+        const dx = px - cx, dy = py - cy;
+        const len = Math.sqrt(dx * dx + dy * dy) || 1;
+        return [px + (dx / len) * PAD, py + (dy / len) * PAD];
+      });
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(poly[0][0], poly[0][1]);
+      for (let i = 1; i < poly.length; i++) ctx.lineTo(poly[i][0], poly[i][1]);
+      ctx.closePath();
+      ctx.fillStyle   = hexToRgba(color, isOuter ? 0.08 : 0.13);
+      ctx.strokeStyle = hexToRgba(color, isOuter ? 0.40 : 0.60);
+      ctx.lineWidth   = isOuter ? 2 : 1.5;
+      if (!isOuter) ctx.setLineDash([5, 3]);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+
+      // Label just above the topmost hull vertex.
+      const topY = Math.min(...poly.map(p => p[1]));
+      ctx.save();
+      ctx.font = `bold ${isOuter ? 11 : 10}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const lbl = g.displayLabel;
+      const tm  = ctx.measureText(lbl);
+      ctx.fillStyle = 'rgba(255,255,255,0.78)';
+      ctx.fillRect(cx - tm.width / 2 - 3, topY - 18, tm.width + 6, 15);
+      ctx.fillStyle = color;
+      ctx.fillText(lbl, cx, topY - 11);
+      ctx.restore();
+      hullPolys.push({ gid, poly });
+    }
+  }
+
+  ec.on('finished', redrawHulls);
+  // Redraw on every render frame so hulls follow zoom/pan in real-time.
+  let _hullRaf = null;
+  ec.getZr().on('rendered', () => {
+    if (_hullRaf) cancelAnimationFrame(_hullRaf);
+    _hullRaf = requestAnimationFrame(() => { _hullRaf = null; redrawHulls(); });
+  });
+  // ── End hull overlay ─────────────────────────────────────────────────────
+
   const directed = !!spec.directed;
+
+  // D3-managed position store — persists across rerenders, never touched by ECharts
+  const posStore = new Map();
+  // Track which node/group IDs were displayed in the previous render to detect true newcomers
+  let prevFilteredIds = new Set();
+
+  function updateMethodButtons() {
+    methodBtns.forEach((btn, id) => {
+      const active = id === activeGroupMethod;
+      btn.style.background    = active ? 'var(--accent-bg,#e8f0fe)' : 'transparent';
+      btn.style.color         = active ? 'var(--accent-text,#1a73e8)' : 'var(--text,#444)';
+      btn.style.borderColor   = active ? 'var(--accent,#1a73e8)' : 'var(--border2,#ccc)';
+      btn.style.fontWeight    = active ? '600' : 'normal';
+    });
+  }
+
+  function applyGrouping(method) {
+    activeGroupMethod = method;
+    ({ levels, gInfo, l1Colors, groupingMethod, groupingFields } =
+      buildHierarchicalGroups(allNodes, links, CHART_COLORS, method));
+    idToL1Gid = levels[0] || new Map();
+    l1Count = [...gInfo.values()].filter(g => g.level === 1).length;
+    l2Count = [...gInfo.values()].filter(g => g.level === 2).length;
+    groupConns = computeGroupConns();
+    posStore.clear();
+    prevFilteredIds = new Set();
+    noteEl.textContent = buildGroupingNote();
+    noteEl.style.display = (l1Count > 0 || l2Count > 0) ? '' : 'none';
+    grpSec.style.display = (l1Count > 0 || l2Count > 0) ? '' : 'none';
+    updateMethodButtons();
+    rerender();
+  }
   const titleOpt = spec.title ? { text: spec.title, top: 5, left: 'center', textStyle: { color: t.text, fontSize: 13 } } : undefined;
   const ROLE_COLOR = { both: '#2E9CDB', source: '#2E9CDB', dest: '#2E9CDB' };
   const GROUP_COLOR_TWIN = '#2E9CDB';
@@ -936,6 +1712,9 @@ function renderGraph(wrap, spec) {
   let useColorByCategory = false;
   let edgeOpacity = 0.5;
   let nodeOpacity = 1.0;
+  let nodeSizeScale = 0.2;
+  let showTwinLabels = false;
+  let leafFillWhite = true;
   let nodeLabelFontSize = 10;
   let edgeLabelFontSize = 10;
   let arrowheadMinSize = 8;
@@ -944,8 +1723,8 @@ function renderGraph(wrap, spec) {
 
   function rerender() {
     if (grpBtn) {
-      const anyCol = [...gInfo.values()].some(g => !g.expanded);
-      grpBtn.textContent = anyCol ? 'Expand all groups' : 'Collapse all groups';
+      const anyCollapsedL1 = [...gInfo.values()].filter(g => g.level === 1).some(g => !g.expanded);
+      grpBtn.textContent = anyCollapsedL1 ? 'Expand L1 groups' : 'Collapse L1 groups';
     }
     if (catBtn) {
       const anyVis = categories.some(c => catVisible.get(c));
@@ -957,15 +1736,19 @@ function renderGraph(wrap, spec) {
       el.style.textDecoration = on ? 'none' : 'line-through';
     });
 
-    // Display nodes
+    // Display nodes — walk levels outermost-first; show the first collapsed group found
     const idToDisp = new Map();
     const dispEntries = [];
-    const seenG = new Set();
+    const seenGroups = new Set();
     allNodes.forEach(n => {
-      const gid = idToGid.get(n.id);
-      if (gid && !gInfo.get(gid).expanded) {
-        if (!seenG.has(gid)) { seenG.add(gid); dispEntries.push({ kind: 'group', gid, info: gInfo.get(gid) }); }
-        idToDisp.set(n.id, gid);
+      let collapsedGid = null;
+      for (let lvl = 0; lvl < levels.length; lvl++) {
+        const gid = levels[lvl].get(n.id);
+        if (gid && !gInfo.get(gid).expanded) { collapsedGid = gid; break; }
+      }
+      if (collapsedGid) {
+        if (!seenGroups.has(collapsedGid)) { seenGroups.add(collapsedGid); dispEntries.push({ kind: 'group', gid: collapsedGid, info: gInfo.get(collapsedGid) }); }
+        idToDisp.set(n.id, collapsedGid);
       } else {
         dispEntries.push({ kind: 'node', node: n });
         idToDisp.set(n.id, n.id);
@@ -977,7 +1760,7 @@ function renderGraph(wrap, spec) {
     const linkMap = new Map();
     visLinks.forEach(l => {
       const s = idToDisp.get(l.source), tg = idToDisp.get(l.target);
-      if (s === tg) return;
+      if (!s || !tg || s === tg) return;
       const key = [s, tg].sort().join('|') + '|' + (l.label || '');
       if (!linkMap.has(key)) linkMap.set(key, { source: s, target: tg, label: l.label, color: l.color, value: +(l.value || 1), count: 1 });
       else { const e = linkMap.get(key); e.value += +(l.value || 1); e.count++; }
@@ -1016,6 +1799,195 @@ function renderGraph(wrap, spec) {
       // Filter links: keep only those connecting visible nodes
       filteredLinks = dispLinks.filter(l => visibleIds.has(l.source) && visibleIds.has(l.target));
     }
+
+    // ── D3 force simulation for stable positions ────────────────────────────
+    const W = Math.max(chartDiv.offsetWidth || 0, 200);
+    const H = Math.max(chartDiv.offsetHeight || 0, 380);
+    const isFirstLayout = posStore.size === 0;
+
+    // Snapshot which IDs were already in posStore — used to detect newcomers in seeding.
+    const preExistingIds = new Set(posStore.keys());
+
+    if (isFirstLayout) {
+      // Arrange in an evenly-spaced circle so nodes start spread out rather than
+      // clustered near the origin (D3's default random init).
+      // Seed groups on a larger outer ring, individual nodes on a smaller inner ring,
+      // so the simulation starts with communities already somewhat separated.
+      const groups0 = filteredEntries.filter(d => d.kind === 'group');
+      const indivs0 = filteredEntries.filter(d => d.kind !== 'group');
+      const outerR = Math.min(W, H) * 0.42;
+      const innerR = Math.min(W, H) * 0.22;
+      groups0.forEach((d, i) => {
+        const angle = (i / Math.max(1, groups0.length)) * Math.PI * 2;
+        posStore.set(d.gid, { x: W / 2 + outerR * Math.cos(angle), y: H / 2 + outerR * Math.sin(angle) });
+      });
+      indivs0.forEach((d, i) => {
+        const angle = (i / Math.max(1, indivs0.length)) * Math.PI * 2;
+        posStore.set(d.node.id, { x: W / 2 + innerR * Math.cos(angle), y: H / 2 + innerR * Math.sin(angle) });
+      });
+    } else {
+      // Pass 1: seed collapsed groups (they appear from member expansion being reversed)
+      filteredEntries.forEach(d => {
+        if (d.kind !== 'group') return;
+        const displayId = d.gid;
+        if (posStore.has(displayId)) return;
+        const grp = d.info;
+        if (grp.savedPos) {
+          posStore.set(displayId, grp.savedPos);
+        } else {
+          // Centroid of members' last known positions
+          let sx = 0, sy = 0, cnt = 0;
+          grp.members.forEach(mid => { const p = posStore.get(mid); if (p) { sx += p.x; sy += p.y; cnt++; } });
+          if (cnt > 0) {
+            posStore.set(displayId, { x: sx / cnt, y: sy / cnt });
+          } else {
+            // Members not yet in posStore — this group just appeared because its parent
+            // was expanded. Seed near the nearest ancestor group that has a known position.
+            const anyMember = grp.members[0];
+            let parentL1gid = null;
+            if (anyMember) {
+              for (let lvl = 0; lvl < levels.length - 1; lvl++) {
+                const pgid = levels[lvl].get(anyMember);
+                if (pgid && posStore.has(pgid)) { parentL1gid = pgid; break; }
+              }
+            }
+            const parentPos = parentL1gid ? posStore.get(parentL1gid) : null;
+            const jitter = 40;
+            posStore.set(displayId, parentPos
+              ? { x: parentPos.x + (Math.random() - 0.5) * jitter, y: parentPos.y + (Math.random() - 0.5) * jitter }
+              : { x: W / 2, y: H / 2 });
+          }
+        }
+      });
+
+      // Pass 2: gather new individual nodes by parent so we can spread them on
+      // an evenly-spaced circle (random scatter gives unreadable dense blobs for
+      // large groups).
+      const newNodesByParent = new Map();
+      filteredEntries.forEach(d => {
+        if (d.kind !== 'node') return;
+        const id = d.node.id;
+        if (posStore.has(id)) return;
+        let pgid = null;
+        for (let lvl = levels.length - 1; lvl >= 0; lvl--) {
+          const gid = levels[lvl]?.get(id);
+          if (gid && posStore.has(gid)) { pgid = gid; break; }
+        }
+        const bucket = pgid || '__none__';
+        if (!newNodesByParent.has(bucket)) newNodesByParent.set(bucket, []);
+        newNodesByParent.get(bucket).push(id);
+      });
+
+      // Seed new nodes randomly within a disk. A regular circle produces
+      // concentric-ring artifacts once groupAttract and collision settle;
+      // random placement lets charge+link+collision find a natural layout.
+      newNodesByParent.forEach((nodeIds, pgid) => {
+        const center = pgid !== '__none__' && posStore.has(pgid)
+          ? posStore.get(pgid)
+          : { x: W / 2, y: H / 2 };
+        const r = Math.max(200, Math.sqrt(nodeIds.length) * 60);
+        nodeIds.forEach(nodeId => {
+          const angle = Math.random() * Math.PI * 2;
+          const dist  = r * Math.sqrt(Math.random()); // uniform within disk
+          posStore.set(nodeId, { x: center.x + Math.cos(angle) * dist, y: center.y + Math.sin(angle) * dist });
+        });
+      });
+    }
+
+    // Warm-start: all nodes begin at their last known positions; newcomers begin at
+    // their seeded position. No pinning — let the whole graph shift slightly to
+    // accommodate newly revealed nodes, matching natural force-directed behaviour.
+    const d3Nodes = filteredEntries.map(d => {
+      const id = d.kind === 'group' ? d.gid : d.node.id;
+      const p = posStore.get(id);
+      const isGroup = d.kind === 'group';
+      const grpSz = isGroup ? Math.max(22, Math.min(72, 14 + Math.sqrt(groupConns.get(id) || d.info.members.length) * 4)) : 0;
+      // Identify which expanded L1 community anchors this node so the group-attraction
+      // force can keep community members clustered near their original group position.
+      let l1Anchor = null;
+      if (!isGroup) {
+        const l1gid = idToL1Gid.get(id);
+        if (l1gid && gInfo.get(l1gid).expanded) l1Anchor = l1gid;
+      } else if (d.info.level === 2) {
+        const anyMember = d.info.members[0];
+        const l1gid = anyMember ? idToL1Gid.get(anyMember) : null;
+        if (l1gid && gInfo.get(l1gid).expanded) l1Anchor = l1gid;
+      }
+      return { id, x: p ? p.x : W / 2, y: p ? p.y : H / 2, isGroup, grpSz, l1Anchor };
+    });
+
+    // Only run D3 when the set of displayed nodes actually changed (expand/collapse).
+    // Pure visual rerenders (opacity, color, search with same nodes) skip D3.
+    const curFilteredIds = new Set(filteredEntries.map(d => d.kind === 'group' ? d.gid : d.node.id));
+    const hasNewNodes = isFirstLayout || [...curFilteredIds].some(id => !prevFilteredIds.has(id));
+    if (hasNewNodes) {
+      const simIdSet = curFilteredIds;
+      // Parallel edges between the same pair (same source+target, different labels)
+      // each contribute independent link force. Deduplicate to 1 per unordered pair
+      // so high-connectivity pairs don't collapse into each other.
+      const d3PairSeen = new Set();
+      const d3Links = filteredLinks
+        .filter(l => {
+          if (!simIdSet.has(l.source) || !simIdSet.has(l.target)) return false;
+          const pair = l.source < l.target ? `${l.source}|${l.target}` : `${l.target}|${l.source}`;
+          if (d3PairSeen.has(pair)) return false;
+          d3PairSeen.add(pair);
+          return true;
+        })
+        .map(l => ({ source: l.source, target: l.target }));
+
+      const makeLinkForce = () => d3.forceLink(d3Links).id(d => d.id)
+        .distance(l => {
+          const sg = l.source.isGroup, tg = l.target.isGroup;
+          return (sg && tg) ? 400 : (sg || tg) ? 230 : 150;
+        })
+        .strength(l => {
+          const sg = l.source.isGroup, tg = l.target.isGroup;
+          return (sg && tg) ? 0.04 : 0.12;
+        });
+
+      if (isFirstLayout) {
+        // Phase 1: repulsion + collision only at constant alpha so nodes spread out
+        // freely before links are introduced. Without this, link forces immediately
+        // pull connected groups back into a pile during the first ticks.
+        const d3sim = d3.forceSimulation(d3Nodes)
+          .force('charge', d3.forceManyBody().strength(d => d.isGroup ? -(600 + d.grpSz * d.grpSz * 0.4) : -450))
+          .force('x', d3.forceX(W / 2).strength(0.01))
+          .force('y', d3.forceY(H / 2).strength(0.01))
+          .force('collide', d3.forceCollide(d => d.isGroup ? Math.max(150, d.grpSz * 2.5) : 50))
+          .alphaDecay(0)
+          .stop();
+        for (let i = 0; i < 150; i++) d3sim.tick();
+        // Phase 2: introduce links on the already-spread positions and run to settle.
+        d3sim.force('link', makeLinkForce()).alphaDecay(0.0228).alpha(1);
+        for (let i = 0; i < 450; i++) { d3sim.tick(); if (d3sim.alpha() < 0.001) break; }
+      } else {
+        const d3sim = d3.forceSimulation(d3Nodes)
+          .force('link', makeLinkForce())
+          .force('charge', d3.forceManyBody().strength(d => d.isGroup ? -(600 + d.grpSz * d.grpSz * 0.4) : -600))
+          .force('x', d3.forceX(W / 2).strength(0.01))
+          .force('y', d3.forceY(H / 2).strength(0.01))
+          .force('collide', d3.forceCollide(d => d.isGroup ? Math.max(150, d.grpSz * 2.5) : 50))
+          // Only pull L2 group nodes toward their community anchor.
+          // Individual nodes must NOT have this force — it creates concentric-ring
+          // equilibria where charge+groupAttract+collision lock nodes into orbits.
+          // Individual node cohesion comes from intra-community link force instead.
+          .force('groupAttract', alpha => {
+            d3Nodes.forEach(node => {
+              if (!node.l1Anchor || !node.isGroup) return;
+              const grp = gInfo.get(node.l1Anchor);
+              const target = grp && grp.savedPos;
+              if (!target) return;
+              node.vx += (target.x - node.x) * 0.06 * alpha;
+              node.vy += (target.y - node.y) * 0.06 * alpha;
+            });
+          })
+          .stop();
+        for (let i = 0; i < 300; i++) { d3sim.tick(); if (d3sim.alpha() < 0.001) break; }
+      }
+      d3Nodes.forEach(n => posStore.set(n.id, { x: n.x, y: n.y }));
+    }
+    prevFilteredIds = curFilteredIds;
 
     // Degree on display set
     const degree = new Map();
@@ -1057,47 +2029,79 @@ function renderGraph(wrap, spec) {
       };
       
       if (d.kind === 'group') {
-        const totalConns = groupTotalConns.get(d.gid) || d.info.members.length;
-        const sz = Math.max(22, Math.min(72, 14 + Math.sqrt(totalConns) * 5));
+        const grp = d.info;
+        const totalConns = groupConns.get(d.gid) || grp.members.length;
+        const sz = Math.max(28, Math.min(80, 16 + Math.sqrt(totalConns) * 4)) * nodeSizeScale;
+        const isL1 = grp.level === 1;
+        const gpos = posStore.get(d.gid);
+        const gc = grp.color || '#2E9CDB';
         return {
           id: d.gid,
-          name: '◆ ' + d.info.displayLabel,
-          symbol: 'diamond',
+          name: `L${grp.level} ${grp.displayLabel}`,
+          symbol: 'circle',
           symbolSize: sz,
-          itemStyle: { color: getNodeColor(d.gid), borderColor: '#333', borderWidth: 1.5, opacity: nodeOpacity },
-          label: { show: true, position: 'inside', fontSize: nodeLabelFontSize, fontWeight: 'bold', color: t.text },
+          ...(gpos ? { x: gpos.x, y: gpos.y } : {}),
+          // Solid filled circle: groups are visually prominent, leaves are hollow.
+          // Border thickness signals depth — L1 thicker than L2.
+          itemStyle: { color: gc, borderColor: '#ffffff', borderWidth: isL1 ? 2 : 1, opacity: nodeOpacity },
+          label: {
+            show: true, position: 'inside',
+            formatter: `{lv|L${grp.level}}\n{nm|${grp.displayLabel}}\n{ct|(${grp.members.length})}`,
+            rich: {
+              lv: { fontSize: nodeLabelFontSize + 4, fontWeight: 'bold', color: '#ffffff',
+                    textBorderColor: gc, textBorderWidth: 1, lineHeight: nodeLabelFontSize + 7,
+                    align: 'center' },
+              nm: { fontSize: nodeLabelFontSize, fontWeight: 'bold', color: '#ffffff',
+                    textBorderColor: gc, textBorderWidth: 1 },
+              ct: { fontSize: nodeLabelFontSize, color: 'rgba(255,255,255,0.85)',
+                    textBorderColor: gc, textBorderWidth: 1, align: 'center',
+                    lineHeight: nodeLabelFontSize + 4 },
+            },
+          },
           _isGroup: true, _gid: d.gid,
         };
       }
       const n = d.node;
       const id = n.id;
       const deg = degree.get(id) || 1;
-      const sz = n.size || (n.value != null
+      const szBase = n.size || (n.value != null
         ? Math.max(16, Math.min(72, Math.sqrt(n.value) * 4))
         : Math.max(10, Math.min(56, 8 + Math.sqrt(deg) * 4)));
+      const sz = szBase * nodeSizeScale;
       const role = (sourceSet.has(id) && destSet.has(id)) ? 'both' : sourceSet.has(id) ? 'source' : 'dest';
-      const inExp = idToGid.has(id) && gInfo.get(idToGid.get(id)).expanded;
+      const l1gid = idToL1Gid.get(id);
+      const communityColor = l1gid ? l1Colors.get(l1gid) : null;
+      // Find deepest expanded group containing this node
+      let groupGid = null;
+      for (let lvl = levels.length - 1; lvl >= 0; lvl--) {
+        const gid = levels[lvl]?.get(id);
+        if (gid && gInfo.get(gid)?.expanded) { groupGid = gid; break; }
+      }
+      const inGroup = groupGid != null;
+      const leafColor = useColorByCategory ? getNodeColor(id) : (n.color || communityColor || ROLE_COLOR[role]);
+      const storedPos = posStore.get(id);
       return {
         id,
         name: n.name || id,
         symbolSize: sz,
+        ...(storedPos ? { x: storedPos.x, y: storedPos.y } : {}),
         itemStyle: {
-          color: useColorByCategory ? getNodeColor(id) : (n.color || ROLE_COLOR[role]),
-          borderColor: inExp ? '#e63946' : null,
-          borderWidth: inExp ? 2.5 : 0,
+          color: leafFillWhite ? '#ffffff' : 'transparent',
+          borderColor: leafColor,
+          borderWidth: inGroup ? 2.5 : 1.5,
           opacity: nodeOpacity,
         },
         label: {
-          show: deg >= labelCutoff || inExp,
+          show: !(groupGid && gInfo.get(groupGid)?.kind === 'twin' && !showTwinLabels) && (deg >= labelCutoff || inGroup),
           position: 'inside',
           fontSize: nodeLabelFontSize,
-          color: inExp ? '#ffffff' : '#ffffff',
-          textBorderColor: inExp ? '#e63946' : t.text,
+          color: leafColor,
+          textBorderColor: '#ffffff',
           textBorderWidth: 2,
-          fontWeight: inExp ? 'bold' : 'normal',
+          fontWeight: inGroup ? 'bold' : 'normal',
         },
-        _inExpandedGroup: inExp,
-        _expandedGid: inExp ? idToGid.get(id) : null,
+        _inGroup: inGroup,
+        _groupGid: groupGid,
       };
     });
 
@@ -1133,15 +2137,20 @@ function renderGraph(wrap, spec) {
           if (p.data._isGroup) {
             const info = gInfo.get(p.data._gid);
             const list = info.members.slice(0, 8).join(', ') + (info.members.length > 8 ? ', …' : '');
-            return '<b>' + p.name + '</b><br/>' + list + '<br/><i>click to expand</i>';
+            const kindLabel = info.kind === 'attribute'
+              ? (info.level === 1 ? 'Attribute group (L1)' : `Attribute sub-group (L${info.level})`)
+              : info.kind === 'louvain' ? 'Louvain community'
+              : 'Twin sub-group';
+            return '<b>' + p.name + '</b><br/><i>' + kindLabel + '</i><br/>' + list + '<br/><i>click to expand</i>';
           }
-          return p.name + (p.data._inExpandedGroup ? '<br/><i>click to collapse group</i>' : '');
+          return p.name + (p.data._inGroup ? '<br/><i>click to collapse group</i>' : '');
         },
       },
       legend: { show: false },
       series: [{
+        id: 'graph-main',
         type: 'graph',
-        layout: spec.layout || 'force',
+        layout: 'none',
         data: nodes,
         links: echLinks,
         roam: true,
@@ -1149,20 +2158,49 @@ function renderGraph(wrap, spec) {
         edgeLabel: { show: false, fontSize: 10 },
         edgeSymbol: (directed && showArrowheads) ? ['none', 'arrow'] : ['none', 'none'],
         lineStyle: { curveness: spec.curved ? 0.2 : 0 },
-        force: { repulsion: 200, edgeLength: [50, 180], gravity: 0.05 },
         emphasis: { focus: 'adjacency', lineStyle: { width: 4 }, edgeLabel: { show: true, fontSize: 10 } },
       }],
     };
-    ec.setOption(option, true);
+    ec.setOption(option, { replaceMerge: ['series'] });
   }
 
+  updateMethodButtons();
   rerender();
+
+  // Flag set synchronously by the ECharts node-click handler so the hull
+  // click handler below knows to skip hull hit-testing for that click.
+  let ecClickHandled = false;
 
   ec.on('click', params => {
     if (params.dataType !== 'node') return;
     const d = params.data;
-    if (d && d._isGroup) { gInfo.get(d._gid).expanded = true; rerender(); }
-    else if (d && d._inExpandedGroup) { gInfo.get(d._expandedGid).expanded = false; rerender(); }
+    if (!d) return;
+    ecClickHandled = true;
+    if (d._isGroup) {
+      const grp = gInfo.get(d._gid);
+      grp.savedPos = posStore.get(d._gid);
+      grp.expanded = true;
+      rerender();
+    } else if (d._inGroup) { gInfo.get(d._groupGid).expanded = false; rerender(); }
+  });
+
+  // Click anywhere on a hull's background area (not on a node) to collapse that group.
+  chartDiv.addEventListener('click', e => {
+    if (ecClickHandled) { ecClickHandled = false; return; }
+    const rect = chartDiv.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    // Check in reverse draw order so inner (L2) hulls are tested first.
+    for (let i = hullPolys.length - 1; i >= 0; i--) {
+      const { gid, poly, circle } = hullPolys[i];
+      const hit = poly
+        ? d3.polygonContains(poly, [x, y])
+        : (circle && (x - circle.cx) ** 2 + (y - circle.cy) ** 2 <= circle.r ** 2);
+      if (hit) {
+        const g = gInfo.get(gid);
+        if (g) { g.expanded = false; rerender(); return; }
+      }
+    }
   });
 
   window.addEventListener('resize', () => ec.resize());
@@ -1448,13 +2486,12 @@ function renderDynet3D(wrap, spec) {
 
   // ── Build DOM (canvas + side panel) ──────────────────────────────────────
   wrap.innerHTML = '';
-  wrap.style.display = 'flex';
-  wrap.style.flexDirection = 'row';
+  wrap.style.position = 'relative';
   wrap.style.padding = '0';
-  wrap.style.gap = '0';
+  wrap.style.overflow = 'hidden';
 
   const canvasDiv = document.createElement('div');
-  canvasDiv.style.cssText = 'flex:1 1 auto;position:relative;background:#ffffff;min-height:400px;min-width:0;overflow:hidden;';
+  canvasDiv.style.cssText = 'position:absolute;left:0;right:230px;top:0;bottom:0;overflow:hidden;background:#ffffff;';
   wrap.appendChild(canvasDiv);
 
   if (spec.title) {
@@ -1475,7 +2512,7 @@ function renderDynet3D(wrap, spec) {
   canvasDiv.appendChild(sideBtn);
 
   const panel = document.createElement('div');
-  panel.style.cssText = 'flex:0 0 230px;padding:12px;font-size:11px;background:var(--bg2,#f7f6f2);border-left:0.5px solid var(--border,rgba(0,0,0,0.1));overflow-y:auto;color:var(--text,#000);';
+  panel.style.cssText = 'position:absolute;right:0;top:0;bottom:0;width:230px;padding:12px;font-size:11px;background:var(--bg2,#f7f6f2);border-left:0.5px solid var(--border,rgba(0,0,0,0.1));overflow-y:auto;color:var(--text,#000);box-sizing:border-box;';
   wrap.appendChild(panel);
 
   // Check Three.js availability
@@ -2211,25 +3248,29 @@ function renderDynet3D(wrap, spec) {
   // ── Resize handling ──────────────────────────────────────────────────────
   // Preserves the current frustum height; recomputes left/right from the new
   // aspect ratio so the scene neither stretches nor shrinks vertically.
-  const ro = new ResizeObserver(() => {
-    const w = canvasDiv.clientWidth, h = canvasDiv.clientHeight;
-    if (w > 0 && h > 0) {
-      const camH = camera.top - camera.bottom;
-      const newAspect = w / h;
-      const newW = camH * newAspect;
-      camera.left = -newW / 2;
-      camera.right = newW / 2;
-      camera.updateProjectionMatrix();
-      renderer.setSize(w, h);
-    }
-  });
-  ro.observe(canvasDiv);
+  let _dynetResizeTimer;
+  const _onDynetResize = () => {
+    clearTimeout(_dynetResizeTimer);
+    _dynetResizeTimer = setTimeout(() => {
+      const w = canvasDiv.clientWidth, h = canvasDiv.clientHeight;
+      if (w > 0 && h > 0) {
+        const camH = camera.top - camera.bottom;
+        const newAspect = w / h;
+        const newW = camH * newAspect;
+        camera.left = -newW / 2;
+        camera.right = newW / 2;
+        camera.updateProjectionMatrix();
+        renderer.setSize(w, h);
+      }
+    }, 100);
+  };
+  window.addEventListener('resize', _onDynetResize);
 
   // Stop animation when the wrap is removed from DOM
   const mo = new MutationObserver(() => {
     if (!document.body.contains(wrap)) {
       running = false;
-      ro.disconnect();
+      window.removeEventListener('resize', _onDynetResize);
       mo.disconnect();
       renderer.dispose();
     }
@@ -2546,10 +3587,10 @@ function mergeRowsIntoSpec(spec, rows) {
   const type = spec.type;
   if (type === 'timearcs' || type === 'timearcs-gl') {
     s.events = rows.map(r => ({
-      year:     pick(r, 'year', 'Year', 'yr'),
+      year:     pick(r, 'year', 'Year', 'yr', 'time_bucket', 'bucket', 'period'),
       source:   pick(r, 'source', 'Source', 'src', 'source_ip'),
       target:   pick(r, 'target', 'Target', 'destination', 'Destination', 'dst', 'dest'),
-      category: pick(r, 'category', 'Category', 'event_type', 'type', 'Type') || '',
+      category: pick(r, 'category', 'Category', 'event_type', 'type', 'Type', 'attack_type', 'attack', 'label', 'event_class', 'class') || '',
       value:  +(pick(r, 'value', 'Value', 'count', 'Count', 'cnt', 'weight') ?? 1),
       label:    pick(r, 'label', 'Label') || '',
     }));
@@ -2723,7 +3764,37 @@ function mergeRowsIntoSpec(spec, rows) {
   return s;
 }
 
-async function resolveChartSpec(spec) {
+async function resolveNdjson(spec, res, onProgress) {
+  const rows = [];
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let done = false;
+  while (!done) {
+    const { done: streamDone, value } = await reader.read();
+    if (streamDone) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop();   // keep any incomplete trailing line
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const obj = JSON.parse(trimmed);
+      if (obj._error) throw new Error('Query error: ' + obj._error);
+      if (obj._end) {
+        if (obj.truncated && onProgress)
+          onProgress(obj.row_count, true);
+        done = true;
+        break;
+      }
+      rows.push(obj);
+      if (onProgress && rows.length % 10000 === 0) onProgress(rows.length, false);
+    }
+  }
+  return mergeRowsIntoSpec(spec, rows);
+}
+
+async function resolveChartSpec(spec, onProgress) {
   if (!spec.sql) return spec;
   const base = API_PROXY_URL.replace('/messages', '');
   const res = await fetch(base + '/query', {
@@ -2732,6 +3803,9 @@ async function resolveChartSpec(spec) {
     body: JSON.stringify({ sql: spec.sql, database: currentDatabase }),
   });
   if (!res.ok) throw new Error('Query fetch failed: HTTP ' + res.status);
+  const ct = res.headers.get('Content-Type') || '';
+  if (ct.includes('x-ndjson')) return resolveNdjson(spec, res, onProgress);
+  // Fallback: old buffered JSON path (proxy without streaming support)
   const result = await res.json();
   if (result.error) throw new Error('Query error: ' + result.error);
   return mergeRowsIntoSpec(spec, result.rows || []);
@@ -2748,12 +3822,22 @@ function initCharts(container) {
     frame.appendChild(wrap);
     el.replaceWith(frame);
     if (rawSpec.sql) {
-      wrap.style.cssText = 'padding:20px;color:#888;font-size:13px';
-      wrap.textContent = 'Loading data…';
+      wrap.style.cssText = 'display:flex;align-items:center;justify-content:center;min-height:120px;';
+      const loadDiv = document.createElement('div');
+      loadDiv.className = 'chart-loading';
+      const titleHtml = rawSpec.title ? `<div class="chart-loading-title">${escHtml(rawSpec.title)}</div>` : '';
+      loadDiv.innerHTML = `<div class="chart-loading-spinner"></div>${titleHtml}<div class="chart-loading-status">Fetching data from database…</div><div class="chart-loading-rows"></div>`;
+      wrap.appendChild(loadDiv);
     }
     (async () => {
       try {
-        const spec = await resolveChartSpec(rawSpec);
+        const onProgress = rawSpec.sql ? (n, truncated) => {
+          const rowsEl = wrap.querySelector('.chart-loading-rows');
+          const statusEl = wrap.querySelector('.chart-loading-status');
+          if (rowsEl) rowsEl.textContent = n.toLocaleString() + (truncated ? ' rows (truncated)' : ' rows received');
+          if (truncated && statusEl) statusEl.textContent = 'Add more aggregation to reduce data size';
+        } : null;
+        const spec = await resolveChartSpec(rawSpec, onProgress);
         const entry = chartRegistry[spec.type];
         if (!entry) throw new Error('Unknown chart type: "' + spec.type + '"');
         wrap.style.cssText = '';

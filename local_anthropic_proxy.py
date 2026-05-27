@@ -18,6 +18,7 @@ DEFAULT_MODEL = "claude-haiku-4-5-20251001"
 MAX_TOOL_ITERATIONS = 15
 COMPACT_THRESHOLD = 50   # rows above this → send summary to LLM, browser fetches full data via /query
 BROWSER_ROW_LIMIT = int(os.getenv("BROWSER_ROW_LIMIT", "2000000"))  # cap for /query (browser renders, not LLM)
+STREAM_CHUNK_SIZE = int(os.getenv("STREAM_CHUNK_SIZE", "2000"))     # rows per PostgreSQL server-side cursor fetch
 
 # ── PostgreSQL connection (override via env vars) ──────────────────────────────
 DB_HOST = os.getenv("DB_HOST", "localhost")
@@ -171,6 +172,65 @@ def execute_sql(sql: str, db_name: str = None, limit: int = None) -> dict:
         return {"error": str(exc)}
 
 
+def _clean_row(row: dict) -> dict:
+    """Serialize psycopg2 types that json.dumps can't handle."""
+    clean = {}
+    for k, v in row.items():
+        if hasattr(v, "isoformat"):      # date / datetime
+            clean[k] = v.isoformat()
+        elif hasattr(v, "__float__"):    # Decimal
+            clean[k] = float(v)
+        else:
+            clean[k] = v
+    return clean
+
+
+def stream_query_rows(sql: str, db_name=None, limit=None):
+    """Generator that yields cleaned row dicts using a PostgreSQL server-side cursor.
+
+    Uses DECLARE/FETCH internally (named psycopg2 cursor) so only STREAM_CHUNK_SIZE
+    rows live in Python RAM at a time — regardless of how many rows the query returns.
+    Yields a final sentinel dict: {"_end": True, "row_count": N} or {"_error": "..."}.
+    """
+    if not PSYCOPG2_AVAILABLE:
+        yield {"_error": "psycopg2 not installed. Run: pip install psycopg2-binary"}
+        return
+
+    target_db = db_name if db_name else DB_NAME
+    normalized = sql.strip().lstrip("(").upper()
+    if not (normalized.startswith("SELECT") or normalized.startswith("WITH")):
+        yield {"_error": "Only SELECT / WITH queries are permitted."}
+        return
+
+    cap = limit if limit is not None else BROWSER_ROW_LIMIT
+    row_count = 0
+    try:
+        conn = psycopg2.connect(
+            host=DB_HOST, port=DB_PORT, dbname=target_db,
+            user=DB_USER, password=DB_PASS,
+            connect_timeout=10,
+        )
+        # Named cursors require a transaction (not autocommit).
+        # readonly=True is safe for read-only sessions.
+        conn.set_session(readonly=True)
+        try:
+            with conn.cursor("_stream", cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.itersize = STREAM_CHUNK_SIZE
+                cur.execute(sql)
+                for raw_row in cur:
+                    yield _clean_row(raw_row)
+                    row_count += 1
+                    if row_count >= cap:
+                        yield {"_end": True, "row_count": row_count, "truncated": True}
+                        return
+            conn.rollback()  # close the read-only transaction cleanly
+        finally:
+            conn.close()
+        yield {"_end": True, "row_count": row_count}
+    except Exception as exc:
+        yield {"_error": str(exc)}
+
+
 def call_anthropic(payload: dict, api_key: str) -> dict:
     """Forward a single request to the Anthropic Messages API."""
     req = urllib.request.Request(
@@ -321,6 +381,8 @@ def run_agentic_loop(body: dict, api_key: str) -> dict:
 
 
 class ProxyHandler(BaseHTTPRequestHandler):
+    protocol_version = 'HTTP/1.1'
+
     def _set_cors_headers(self):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
@@ -334,6 +396,25 @@ class ProxyHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
+
+    def _stream_ndjson(self, rows_gen):
+        """Write a generator of row dicts as chunked NDJSON (one JSON object per line)."""
+        self.send_response(200)
+        self._set_cors_headers()
+        self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
+        self.send_header("Transfer-Encoding", "chunked")
+        self.send_header("X-Accel-Buffering", "no")   # suppress nginx/proxy buffering
+        self.end_headers()
+        try:
+            for row in rows_gen:
+                line = (json.dumps(row, separators=(",", ":")) + "\n").encode("utf-8")
+                self.wfile.write(f"{len(line):x}\r\n".encode())
+                self.wfile.write(line)
+                self.wfile.write(b"\r\n")
+            self.wfile.write(b"0\r\n\r\n")   # terminal chunk — signals end of body
+            self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            pass   # client disconnected mid-stream
 
     def do_GET(self):
         if self.path == "/health":
@@ -375,7 +456,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
             if not sql:
                 self._send_json(400, {"error": "Missing 'sql' field."})
                 return
-            self._send_json(200, execute_sql(sql, db_name, limit=BROWSER_ROW_LIMIT))
+            self._stream_ndjson(stream_query_rows(sql, db_name, limit=BROWSER_ROW_LIMIT))
             return
 
         if self.path != "/messages":

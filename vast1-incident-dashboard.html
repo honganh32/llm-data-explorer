@@ -1,1294 +1,1350 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>VAST1Data Incident Pathway Dashboard</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
-  <style>
-    :root {
-      --bg: #f4efe2;
-      --bg-panel: #fffaf0;
-      --bg-panel-2: #fdf5e8;
-      --text: #192026;
-      --muted: #646867;
-      --border: rgba(20, 25, 30, 0.16);
-      --accent: #007a78;
-      --accent-2: #ff8e3c;
-      --danger: #bd3f2f;
-      --ok: #2b8440;
-      --shadow: 0 10px 28px rgba(40, 34, 25, 0.13);
-      --radius: 14px;
-      --mono: 'IBM Plex Mono', Consolas, monospace;
-      --sans: 'Space Grotesk', 'Segoe UI', sans-serif;
-    }
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>VAST1 — Embargo Incident Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<style>
+:root {
+  --bg:      #f4efe6;
+  --panel:   #fffaf2;
+  --panel2:  #fdf5e6;
+  --text:    #1a2026;
+  --muted:   #6a7268;
+  --border:  rgba(20,25,15,0.13);
+  --accent:  #006b69;
+  --danger:  #b83520;
+  --radius:  12px;
+  --shadow:  0 4px 18px rgba(20,18,12,0.09);
+  --mono:    'Cascadia Code','Courier New',monospace;
+  --sans:    'Segoe UI',system-ui,sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: var(--sans); background: var(--bg); color: var(--text); min-height: 100vh; }
 
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
+.shell { max-width: 1700px; margin: 0 auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
 
-    body {
-      font-family: var(--sans);
-      color: var(--text);
-      background:
-        radial-gradient(circle at 12% 10%, rgba(0, 122, 120, 0.13), transparent 40%),
-        radial-gradient(circle at 85% 15%, rgba(255, 142, 60, 0.18), transparent 35%),
-        linear-gradient(180deg, #f8f2e8, #efe8d7 55%, #ece2cd);
-      min-height: 100vh;
-      line-height: 1.35;
-    }
+/* ── Header ── */
+.hdr { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; box-shadow: var(--shadow); }
+.hdr-top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.hdr h1 { font-size: 1.2rem; font-weight: 700; letter-spacing: .01em; }
+.hdr-sub { font-size: .78rem; color: var(--muted); }
+.tag { font-size: .7rem; padding: 2px 7px; border: 1px solid var(--border); border-radius: 6px; background: #fff; font-family: var(--mono); color: var(--muted); }
 
-    .shell {
-      width: min(1500px, 96vw);
-      margin: 18px auto 28px;
-      display: grid;
-      gap: 14px;
-    }
+.ctrls { display: flex; gap: 7px; flex-wrap: wrap; align-items: center; }
+.btn { border: 1px solid var(--border); border-radius: 7px; padding: 5px 11px; font-size: .79rem; font-family: var(--sans); cursor: pointer; background: #fff; color: var(--text); transition: border-color .12s, background .12s; }
+.btn:hover { border-color: var(--accent); background: rgba(0,107,105,.06); }
+.btn-p { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn-p:hover { opacity: .87; background: var(--accent); }
+#status { margin-left: auto; font-size: .74rem; color: var(--muted); font-family: var(--mono); }
 
-    .panel {
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      background: var(--bg-panel);
-      box-shadow: var(--shadow);
-    }
+.metrics { display: flex; gap: 7px; flex-wrap: wrap; }
+.metric { flex: 1; min-width: 88px; background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 7px 9px; }
+.metric .ml { font-size: .65rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.metric .mv { font-family: var(--mono); font-size: .98rem; font-weight: 600; margin-top: 1px; }
 
-    .header {
-      padding: 18px 20px;
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 12px;
-      justify-content: space-between;
-      background: linear-gradient(120deg, rgba(0, 122, 120, 0.1), rgba(255, 142, 60, 0.16));
-    }
+/* ── Main row ── */
+.main-row { display: grid; grid-template-columns: 1.7fr 1fr; gap: 10px; align-items: start; }
 
-    .header h1 {
-      font-size: clamp(1.2rem, 2.8vw, 1.9rem);
-      letter-spacing: 0.02em;
-    }
+/* ── Panel ── */
+.panel { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); display: flex; flex-direction: column; overflow: hidden; }
+.ph { padding: 8px 13px; border-bottom: 1px solid var(--border); display: flex; align-items: baseline; gap: 8px; background: var(--panel2); flex-shrink: 0; }
+.ph h2 { font-size: .88rem; font-weight: 600; }
+.ph .hint { font-size: .7rem; color: var(--muted); margin-left: auto; }
 
-    .header p {
-      color: var(--muted);
-      max-width: 880px;
-      font-size: 0.95rem;
-    }
+/* ── Timeline ── */
+#tl-wrap { padding: 8px 10px 10px; }
+.legend { display: flex; gap: 7px; flex-wrap: wrap; margin-bottom: 5px; font-size: .69rem; color: var(--muted); }
+.legend-item { display: flex; align-items: center; gap: 3px; }
+.swatch { width: 9px; height: 9px; border-radius: 2px; flex-shrink: 0; }
+#tl-svg { display: block; }
 
-    .controls {
-      padding: 12px 20px;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      border-top: 1px solid var(--border);
-      align-items: center;
-      background: var(--bg-panel-2);
-    }
+/* ── Messages ── */
+.msg-notice { padding: 5px 12px; font-size: .71rem; color: var(--muted); background: rgba(0,107,105,.07); border-bottom: 1px solid var(--border); flex-shrink: 0; font-style: italic; display: none; }
+.msg-err { margin: 6px 10px; padding: 7px 10px; background: rgba(184,53,32,.09); border: 1px solid rgba(184,53,32,.28); border-radius: 6px; font-size: .73rem; font-family: var(--mono); color: var(--danger); flex-shrink: 0; }
+#msg-scroll { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 7px; min-height: 0; max-height: 500px; }
 
-    button {
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 8px 11px;
-      font-family: var(--sans);
-      font-size: 0.86rem;
-      cursor: pointer;
-      color: var(--text);
-      background: #fff;
-    }
+/* Chat bubbles */
+.brow { display: flex; gap: 7px; align-items: flex-start; }
+.avatar { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: .66rem; font-weight: 700; font-family: var(--mono); color: #fff; flex-shrink: 0; margin-top: 1px; }
+.bbody { max-width: 90%; display: flex; flex-direction: column; gap: 2px; }
+.bname { font-size: .64rem; color: var(--muted); font-family: var(--mono); padding: 0 3px; }
+.bubble { padding: 6px 10px; border-radius: 11px 11px 11px 3px; font-size: .79rem; line-height: 1.45; word-break: break-word; border: 1px solid transparent; }
+.bfoot { display: flex; gap: 6px; align-items: center; padding: 0 3px; font-size: .61rem; color: var(--muted); font-family: var(--mono); }
+.etag { display: inline-block; padding: 1px 5px; border-radius: 4px; font-size: .58rem; font-weight: 700; border: 1px solid; }
 
-    button:hover {
-      border-color: rgba(0, 122, 120, 0.8);
-    }
+/* ── Bottom row ── */
+.bottom-row { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; }
+.cpanel { display: flex; flex-direction: column; min-height: 310px; }
+.cbody { flex: 1; padding: 6px; min-height: 256px; }
+.cbody svg { display: block; }
 
-    .pill {
-      padding: 3px 8px;
-      border-radius: 999px;
-      border: 1px solid var(--border);
-      font-size: 0.76rem;
-      background: rgba(255, 255, 255, 0.55);
-    }
+/* ── Causal Chain ── */
+.chain-ctrls { padding: 6px 13px; border-bottom: 1px solid var(--border); display: flex; gap: 12px; align-items: center; font-size: .74rem; color: var(--muted); background: var(--panel2); flex-shrink: 0; flex-wrap: wrap; }
+.chain-ctrls label { display: flex; align-items: center; gap: 6px; }
+.chain-ctrls input[type=range] { width: 80px; vertical-align: middle; accent-color: var(--accent); }
+.chain-body { overflow-x: auto; overflow-y: auto; max-height: 540px; }
+.chain-story { padding: 10px 16px; border-top: 1px solid var(--border); background: rgba(244,162,97,.06); font-size: .76rem; line-height: 1.55; color: var(--text); flex-shrink: 0; }
+.chain-story h3 { font-size: .8rem; font-weight: 700; margin-bottom: 8px; color: var(--text); }
 
-    .status {
-      margin-left: auto;
-      font-size: 0.84rem;
-      color: var(--muted);
-      font-family: var(--mono);
-    }
+/* ── Timeline toolbar ── */
+.tl-ctrls { padding: 5px 13px; border-bottom: 1px solid var(--border); display: flex; gap: 12px; align-items: center; font-size: .74rem; color: var(--muted); background: var(--panel2); flex-shrink: 0; flex-wrap: wrap; }
+.tl-ctrls label { display: flex; align-items: center; gap: 6px; }
+.tl-ctrls input[type=range] { width: 80px; vertical-align: middle; accent-color: var(--accent); }
 
-    .overview {
-      padding: 12px 20px 16px;
-      display: grid;
-      grid-template-columns: repeat(5, minmax(120px, 1fr));
-      gap: 8px;
-      border-top: 1px solid var(--border);
-    }
+/* ── Expand button ── */
+.expand-btn { margin-top: 4px; display: inline-block; background: none; border: none; font-size: .65rem; color: var(--accent); cursor: pointer; padding: 0; font-family: var(--mono); letter-spacing: .03em; }
+.expand-btn:hover { text-decoration: underline; }
 
-    .metric {
-      background: #fff;
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 9px 10px;
-    }
+/* ── Tooltip ── */
+#tip { position: fixed; pointer-events: none; z-index: 9999; background: #1c222a; color: #e5dfd6; border: 1px solid rgba(255,255,255,.13); border-radius: 8px; padding: 7px 10px; font-size: .71rem; font-family: var(--mono); line-height: 1.5; max-width: 300px; opacity: 0; transition: opacity .1s; }
 
-    .metric .label {
-      font-size: 0.76rem;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-    }
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(0,0,0,.18); border-radius: 4px; }
 
-    .metric .value {
-      font-family: var(--mono);
-      margin-top: 2px;
-      font-size: 1.02rem;
-      font-weight: 500;
-    }
-
-    .main-grid {
-      display: grid;
-      gap: 14px;
-      grid-template-columns: 1.75fr 1fr;
-    }
-
-    .viz-wrap {
-      padding: 14px;
-      background: var(--bg-panel);
-      border-radius: var(--radius);
-      border: 1px solid var(--border);
-    }
-
-    .viz-title {
-      display: flex;
-      justify-content: space-between;
-      align-items: baseline;
-      gap: 10px;
-      margin-bottom: 8px;
-    }
-
-    .viz-title h2 {
-      font-size: 1.04rem;
-    }
-
-    .viz-title .hint {
-      font-size: 0.78rem;
-      color: var(--muted);
-    }
-
-    #timeline {
-      width: 100%;
-      min-height: 460px;
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      background: #fffcf5;
-    }
-
-    .messages {
-      height: 100%;
-      min-height: 556px;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .messages-list {
-      margin-top: 8px;
-      overflow-y: auto;
-      padding-right: 4px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      max-height: 502px;
-    }
-
-    .msg-card {
-      border: 1px solid var(--border);
-      border-left-width: 5px;
-      border-radius: 9px;
-      padding: 8px 9px;
-      background: #fff;
-      font-size: 0.86rem;
-    }
-
-    .msg-meta {
-      font-family: var(--mono);
-      font-size: 0.73rem;
-      color: var(--muted);
-      margin-bottom: 3px;
-      display: flex;
-      justify-content: space-between;
-      gap: 8px;
-    }
-
-    .msg-text {
-      white-space: pre-wrap;
-      color: #21282f;
-    }
-
-    .event-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      margin-top: 6px;
-      border: 1px solid var(--border);
-      border-radius: 999px;
-      padding: 2px 8px;
-      font-size: 0.72rem;
-      font-family: var(--mono);
-      background: #fffaf5;
-    }
-
-    .bottom-grid {
-      display: grid;
-      gap: 14px;
-      grid-template-columns: repeat(3, minmax(200px, 1fr));
-    }
-
-    .chart-box {
-      padding: 12px;
-      min-height: 320px;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .chart {
-      flex: 1;
-      min-height: 260px;
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      background: #fffcf8;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .pathway {
-      padding: 12px;
-      min-height: 120px;
-      border-top: 1px solid var(--border);
-      background: rgba(255, 255, 255, 0.5);
-      font-size: 0.88rem;
-      display: grid;
-      gap: 8px;
-    }
-
-    .path-step {
-      border-left: 4px solid var(--accent-2);
-      background: rgba(255, 142, 60, 0.12);
-      padding: 7px 8px;
-      border-radius: 6px;
-    }
-
-    .tooltip {
-      position: fixed;
-      pointer-events: none;
-      z-index: 999;
-      background: #1d242b;
-      color: #fff;
-      border-radius: 8px;
-      padding: 7px 8px;
-      max-width: 320px;
-      font-size: 0.74rem;
-      font-family: var(--mono);
-      opacity: 0;
-      transition: opacity 0.12s;
-      border: 1px solid rgba(255, 255, 255, 0.18);
-    }
-
-    .warning {
-      color: var(--danger);
-      font-family: var(--mono);
-      font-size: 0.82rem;
-      padding: 8px 10px;
-      border-radius: 8px;
-      background: rgba(189, 63, 47, 0.1);
-      border: 1px solid rgba(189, 63, 47, 0.3);
-    }
-
-    .legend-row {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-      margin-top: 4px;
-      font-size: 0.75rem;
-      color: var(--muted);
-    }
-
-    .legend-item {
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-    }
-
-    .swatch {
-      width: 10px;
-      height: 10px;
-      border-radius: 2px;
-    }
-
-    @media (max-width: 1180px) {
-      .main-grid {
-        grid-template-columns: 1fr;
-      }
-
-      .messages {
-        min-height: 360px;
-      }
-
-      .messages-list {
-        max-height: 280px;
-      }
-    }
-
-    @media (max-width: 940px) {
-      .bottom-grid {
-        grid-template-columns: 1fr;
-      }
-
-      .overview {
-        grid-template-columns: repeat(2, minmax(120px, 1fr));
-      }
-    }
-  </style>
+@media (max-width: 1080px) { .main-row { grid-template-columns: 1fr; } #msg-scroll { max-height: 320px; } }
+@media (max-width: 720px)  { .bottom-row { grid-template-columns: 1fr; } }
+</style>
 </head>
 <body>
-  <div class="shell">
-    <section class="panel">
-      <div class="header">
-        <div>
-          <h1>VAST1Data Embargo Incident Explorer</h1>
-          <p>
-            Sequence key actions, decision points, and causal relationships that enabled inappropriate data release.
-            Brush the timeline to drive all charts.
-          </p>
-        </div>
-        <span class="pill">Database: VAST1Data / Schema: mc1</span>
+<div class="shell">
+
+  <section class="hdr">
+    <div class="hdr-top">
+      <h1>VAST1Data — Embargo Incident Visual Analytics</h1>
+      <span class="tag">db: VAST1Data / mc1</span>
+    </div>
+    <p class="hdr-sub">Key events leading to the data leak — brush timeline to drive all charts · hover for detail · click to pin</p>
+    <div class="ctrls">
+      <button class="btn btn-p" id="btn-reload">⟳ Reload</button>
+      <button class="btn" id="btn-clear-pin">Clear pinned</button>
+      <button class="btn" id="btn-focus-release">Focus release window</button>
+      <button class="btn" id="btn-reset-brush">Reset brush</button>
+      <span id="status">Loading…</span>
+    </div>
+    <div class="metrics" id="metrics"></div>
+  </section>
+
+  <section class="main-row">
+    <div class="panel">
+      <div class="ph">
+        <h2>1. Causal Chain Swimlane</h2>
+        <span class="hint">drag window · all events as dots · important events with causal edges · red = critical path</span>
       </div>
-      <div class="controls">
-        <button id="reload-btn">Reload from PostgreSQL</button>
-        <button id="clear-pin-btn">Clear pinned event</button>
-        <button id="focus-release-btn">Focus release window</button>
-        <span class="status" id="status">Initializing...</span>
+      <div class="tl-ctrls">
+        <label>Importance ≥
+          <input type="range" id="tl-threshold" min="2" max="8" value="3">
+          <span id="tl-threshold-val" style="font-family:var(--mono);font-weight:600;color:var(--text)">3</span>
+        </label>
+        <button class="btn" id="btn-reset-zoom" style="padding:2px 9px;font-size:.71rem">Reset zoom</button>
+        <span id="tl-zoom-level" style="font-family:var(--mono);font-size:.69rem;color:var(--accent);min-width:28px">1×</span>
+        <span style="font-size:.69rem;color:var(--muted)">scroll to zoom · drag window to filter</span>
       </div>
-      <div class="overview" id="overview"></div>
-    </section>
-
-    <section class="main-grid">
-      <div class="viz-wrap">
-        <div class="viz-title">
-          <h2>1. Interactive Sequence Timeline</h2>
-          <span class="hint">hover for detail, click to pin, drag brush on lower context band</span>
-        </div>
-        <div class="legend-row" id="timeline-legend"></div>
-        <svg id="timeline"></svg>
-        <div class="pathway" id="pathway"></div>
+      <div id="tl-wrap">
+        <div class="legend" id="tl-legend"></div>
+        <svg id="tl-svg"></svg>
       </div>
+    </div>
 
-      <div class="viz-wrap messages">
-        <div class="viz-title">
-          <h2>1.1 Messages View</h2>
-          <span class="hint">content from selected timeline region</span>
-        </div>
-        <div id="message-warning"></div>
-        <div class="messages-list" id="messages-list"></div>
+    <div class="panel" id="msg-panel">
+      <div class="ph">
+        <h2>1.1 Messages View</h2>
+        <span class="hint" id="msg-hint">selected window</span>
       </div>
-    </section>
+      <div id="msg-notice" class="msg-notice"></div>
+      <div id="msg-err"></div>
+      <div id="msg-scroll"></div>
+    </div>
+  </section>
 
-    <section class="bottom-grid">
-      <div class="panel chart-box">
-        <div class="viz-title">
-          <h2>2.1 Key Actions Sunburst</h2>
-          <span class="hint">actor -> event type in selected window</span>
-        </div>
-        <svg class="chart" id="sunburst"></svg>
+  <section class="bottom-row">
+    <div class="panel cpanel">
+      <div class="ph"><h2>2.1 Key Actions Sunburst</h2><span class="hint">agent → event type</span></div>
+      <div class="cbody" id="cb-sunburst"><svg id="sv-sunburst"></svg></div>
+    </div>
+    <div class="panel cpanel">
+      <div class="ph"><h2>2.2 Keyword Cloud</h2><span class="hint">top terms · window filtered</span></div>
+      <div class="cbody" id="cb-cloud"><svg id="sv-cloud"></svg></div>
+    </div>
+    <div class="panel cpanel">
+      <div class="ph"><h2>2.3 Agent Network</h2><span class="hint">agent-to-agent communication flow</span></div>
+      <div class="cbody" id="cb-net"><svg id="sv-net"></svg></div>
+    </div>
+  </section>
+
+  <!-- Row 3: Causal Chain -->
+  <section style="display:grid;grid-template-columns:1fr;gap:10px;">
+    <div class="panel" style="display:flex;flex-direction:column;">
+      <div class="ph">
+        <h2>3. Causal Chain — Path to Data Leak</h2>
+        <span class="hint">reply chains + decision→release edges · critical path highlighted in red · click node to pin</span>
       </div>
-
-      <div class="panel chart-box">
-        <div class="viz-title">
-          <h2>2.2 Driving Keywords Cloud</h2>
-          <span class="hint">top terms from selected events</span>
-        </div>
-        <svg class="chart" id="keyword-cloud"></svg>
+      <div class="chain-ctrls">
+        <label>Min importance:
+          <input type="range" id="chain-threshold" min="2" max="8" value="3">
+          <span id="chain-threshold-val" style="font-family:var(--mono);font-weight:600;color:var(--text)">3</span>
+        </label>
+        <span>— lower = more events &nbsp;|&nbsp; <span style="color:#bd3f2f;font-weight:700">red edges</span> = critical path &nbsp;|&nbsp; <span style="color:#e76f51;font-weight:700">orange edges</span> = reply chain on path &nbsp;|&nbsp; dashed = off-path reply</span>
       </div>
+      <div class="chain-body" id="cb-chain"><svg id="sv-chain"></svg></div>
+      <div class="chain-story" id="chain-story"></div>
+    </div>
+  </section>
 
-      <div class="panel chart-box">
-        <div class="viz-title">
-          <h2>2.3 Agent Relationship Network</h2>
-          <span class="hint">agent-to-agent communication flow</span>
-        </div>
-        <svg class="chart" id="network"></svg>
-      </div>
-    </section>
-  </div>
+</div>
+<div id="tip"></div>
 
-  <div class="tooltip" id="tooltip"></div>
+<script>
+// ═══════════════════════════════
+// CONFIG
+// ═══════════════════════════════
+const API_URL  = 'http://127.0.0.1:8787/query';
+const DATABASE = 'VAST1Data';
 
-  <script>
-    const API_QUERY_URL = 'http://127.0.0.1:8787/query';
-    const DATABASE = 'VAST1Data';
-    const STOP_WORDS = new Set([
-      'the','and','or','for','to','of','in','on','at','by','with','from','a','an','is','are','be','been','it','that','this','as','we','you','i','our','your',
-      'will','can','could','should','would','about','into','out','up','down','over','under','than','then','if','so','not','no','yes','just','all','any','but',
-      'they','them','their','there','here','what','when','where','which','who','how','do','does','did','have','has','had','need','needs','also','more','most',
-      'new','get','got','let','lets','okay','ok','thanks','thank','please','use','using','via','per','across','after','before'
-    ]);
+const STOP = new Set([
+  'the','and','or','for','to','of','in','on','at','by','with','from','a','an','is','are',
+  'be','been','it','that','this','as','we','you','i','our','your','will','can','could',
+  'should','would','about','into','out','up','down','over','under','than','then','if','so',
+  'not','no','yes','just','all','any','but','they','them','their','there','here','what',
+  'when','where','which','who','how','do','does','did','have','has','had','need','needs',
+  'also','more','most','new','get','got','let','okay','ok','thanks','thank','please','use',
+  'using','via','per','across','after','before','was','were','its','am','im','re','ve','ll',
+  'dont','cant','wont','isnt','dont','very','each','much','such','both','few','own','too',
+  'well','back','still','way','even','made','make','take','come','know','think','going'
+]);
 
-    const TYPE_COLORS = {
-      Decision: '#e76f51',
-      Compliance: '#2a9d8f',
-      Coordination: '#4f7cac',
-      Release: '#bd3f2f',
-      RiskSignal: '#f4a261',
-      Neutral: '#9ba4a6'
-    };
+const ECOL = {
+  Decision:    '#e76f51',
+  Compliance:  '#2a9d8f',
+  Coordination:'#4f7cac',
+  Release:     '#bd3f2f',
+  RiskSignal:  '#f4a261',
+  Neutral:     '#adb5b8'
+};
 
-    const state = {
-      events: [],
-      participants: [],
-      actors: [],
-      brushRange: null,
-      pinnedEvent: null,
-      causalLinks: []
-    };
+const APAL = [
+  '#006b69','#c45c2f','#3a5f8f','#7a4018','#4a3a8a','#1a7a50','#7a6010','#2a507a'
+];
 
-    const tooltip = d3.select('#tooltip');
-    const statusEl = document.getElementById('status');
+// ═══════════════════════════════
+// STATE
+// ═══════════════════════════════
+const S = {
+  events:       [],
+  actors:       [],
+  acol:         {},
+  brush:        null,
+  pinned:       null,
+  sim:          null,
+  zoomState:    null,
+  zoomBehavior: null
+};
 
-    document.getElementById('reload-btn').addEventListener('click', () => init(true));
-    document.getElementById('clear-pin-btn').addEventListener('click', () => {
-      state.pinnedEvent = null;
+// ═══════════════════════════════
+// UTILS
+// ═══════════════════════════════
+const tipEl = document.getElementById('tip');
+
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function fmtT(dt) {
+  return d3.timeFormat('%m-%d %H:%M')(dt);
+}
+
+function showTip(ev, html) {
+  tipEl.style.opacity = '1';
+  tipEl.innerHTML = html;
+  tipEl.style.left = (ev.clientX + 14) + 'px';
+  tipEl.style.top  = (ev.clientY + 12) + 'px';
+}
+
+function hideTip() { tipEl.style.opacity = '0'; }
+
+function setStatus(msg) { document.getElementById('status').textContent = msg; }
+
+function tokens(text) {
+  return (text || '').toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length > 2 && !STOP.has(w));
+}
+
+function cbSize(bodyId) {
+  const el = document.getElementById(bodyId);
+  return {
+    W: Math.max(el.clientWidth  - 12, 160),
+    H: Math.max(el.clientHeight - 12, 220)
+  };
+}
+
+// ═══════════════════════════════
+// DATA
+// ═══════════════════════════════
+async function dbQuery(sql) {
+  const r = await fetch(API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ database: DATABASE, sql })
+  });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const text = await r.text();
+  const rows = [];
+  for (const line of text.split('\n')) {
+    const t = line.trim();
+    if (!t) continue;
+    const obj = JSON.parse(t);
+    if (obj._error) throw new Error(obj._error);
+    if (obj._end) break;
+    rows.push(obj);
+  }
+  return rows;
+}
+
+function classify(e) {
+  const t = (e.content || '').toLowerCase();
+  const c = (e.channel || '').toLowerCase();
+  const m = (e.message_type || '').toLowerCase();
+  if (/\b(decide|decision|approv|authoriz|green.?light|ok.?to.?post|go.?ahead)\b/.test(t))   return 'Decision';
+  if (/\b(embargo|policy|compliance|legal.?review|enforcement|moderation|gate)\b/.test(t))    return 'Compliance';
+  if (/\b(release|released|publish|published|go.?live|share.?it|leak|leaked)\b/.test(t)
+      || c.includes('post') || m.includes('public_post'))                                     return 'Release';
+  if (/\b(risk|concern|warning|flag|unsafe|violation|breach|expose|sensitive|private)\b/.test(t)) return 'RiskSignal';
+  if (m.includes('one_on_one') || m.includes('side_huddle') || c.includes('huddle'))          return 'Coordination';
+  return 'Neutral';
+}
+
+function score(e) {
+  let s = 1;
+  if (e.eventType === 'Release')    s += 5;
+  if (e.eventType === 'Decision')   s += 4;
+  if (e.eventType === 'Compliance') s += 3;
+  if (e.eventType === 'RiskSignal') s += 2;
+  if ((e.content || '').toLowerCase().includes('embargo')) s += 3;
+  if ((e.channel || '').toLowerCase().includes('anonymous')) s += 2;
+  if ((e.message_type || '').toLowerCase().includes('public')) s += 2;
+  if (e.responding_to) s += 1;
+  return s;
+}
+
+function parseRec(raw, sender, actors) {
+  if (!raw) return [];
+  let arr;
+  try {
+    arr = raw.trim().startsWith('[') ? JSON.parse(raw) : raw.split(',').map(s => s.trim());
+  } catch {
+    arr = raw.split(',').map(s => s.trim());
+  }
+  const norm = arr.map(v => String(v).replace(/^"|"$/g, '').trim().toLowerCase());
+  if (norm.includes('all')) return actors.filter(a => a !== sender);
+  return norm.filter(r => r && r !== sender);
+}
+
+// ═══════════════════════════════
+// FILTER
+// ═══════════════════════════════
+function filtered() {
+  if (!S.brush) return S.events;
+  const [a, b] = S.brush;
+  return S.events.filter(e => e.time >= a && e.time <= b);
+}
+
+// ═══════════════════════════════
+// RENDER COORDINATION
+// ═══════════════════════════════
+function renderAll(tl = true) {
+  if (tl) renderTimeline();
+  renderMetrics();
+  renderMessages();
+  renderSunburst();
+  renderCloud();
+  renderNetwork();
+  renderCausalChain();
+}
+
+// ═══════════════════════════════
+// METRICS
+// ═══════════════════════════════
+function renderMetrics() {
+  const f = filtered();
+  const top = d3.rollups(f, v => v.length, d => d.actor).sort((a, b) => b[1] - a[1])[0];
+  const rows = [
+    ['Events',      f.length],
+    ['Releases',    f.filter(e => e.eventType === 'Release').length],
+    ['Decisions',   f.filter(e => e.eventType === 'Decision').length],
+    ['Risk Signals',f.filter(e => e.eventType === 'RiskSignal').length],
+    ['Top Actor',   top ? top[0] : '—']
+  ];
+  document.getElementById('metrics').innerHTML = rows.map(([l, v]) =>
+    `<div class="metric"><div class="ml">${l}</div><div class="mv">${v}</div></div>`
+  ).join('');
+}
+
+// ═══════════════════════════════
+// TIMELINE
+// ═══════════════════════════════
+function renderTimeline() {
+  const svg  = d3.select('#tl-svg');
+  svg.selectAll('*').remove();
+  const wrap = document.getElementById('tl-wrap');
+  const W    = Math.max(wrap.clientWidth - 20, 400);
+
+  if (!S.events.length) {
+    const H = 240;
+    svg.attr('width', W).attr('height', H);
+    svg.append('text').attr('x', W/2).attr('y', H/2)
+      .attr('text-anchor','middle').attr('fill','#888').attr('font-size',13).text('No data loaded');
+    return;
+  }
+
+  const mg    = { top: 10, right: 16, bottom: 38, left: 122 };
+  const ROW_H = 52;
+  const H     = mg.top + S.actors.length * ROW_H + mg.bottom;
+  svg.attr('width', W).attr('height', H);
+
+  // Base (unzoomed) x scale — full domain always
+  const fullDomain = d3.extent(S.events, d => d.time);
+  const xBase = d3.scaleTime().domain(fullDomain).range([mg.left, W - mg.right]);
+  const y     = d3.scaleBand().domain(S.actors)
+    .range([mg.top, mg.top + S.actors.length * ROW_H]).paddingInner(.15);
+
+  // Current x scale (applies stored zoom if any)
+  const xC = () => S.zoomState ? S.zoomState.rescaleX(xBase) : xBase;
+
+  // ── SVG defs ──
+  const defs = svg.append('defs');
+  defs.append('clipPath').attr('id','sw-clip')
+    .append('rect').attr('x', mg.left).attr('y', mg.top - 4)
+    .attr('width', W - mg.left - mg.right).attr('height', S.actors.length * ROW_H + 8);
+  [['sw-arr-crit','#bd3f2f'], ['sw-arr-warn','#f4a261'], ['sw-arr-dim','#aaa']].forEach(([id, col]) => {
+    defs.append('marker').attr('id', id)
+      .attr('markerWidth', 5).attr('markerHeight', 5)
+      .attr('refX', 4.5).attr('refY', 2.5).attr('orient','auto')
+      .append('path').attr('d','M0,0 L5,2.5 L0,5 Z').attr('fill', col);
+  });
+  const filt = defs.append('filter').attr('id','sw-glow')
+    .attr('x','-50%').attr('y','-50%').attr('width','200%').attr('height','200%');
+  filt.append('feGaussianBlur').attr('stdDeviation', 2.5).attr('result','blur');
+  const fm = filt.append('feMerge');
+  fm.append('feMergeNode').attr('in','blur');
+  fm.append('feMergeNode').attr('in','SourceGraphic');
+
+  // ── Alternating lane backgrounds (static, outside clip) ──
+  svg.append('g').selectAll('rect').data(S.actors).join('rect')
+    .attr('x', mg.left).attr('width', W - mg.left - mg.right)
+    .attr('y', d => y(d)).attr('height', y.bandwidth())
+    .attr('fill', (_, i) => i % 2 === 0 ? 'rgba(0,0,0,0.03)' : 'rgba(0,0,0,0.00)');
+
+  // ── Causal structure ──
+  const threshold = parseInt(document.getElementById('chain-threshold').value, 10);
+  const important = S.events.filter(e => e.importance >= threshold);
+  const bgEvents  = S.events.filter(e => e.importance < threshold);
+  const byId      = new Map(S.events.map(e => [e.message_id, e]));
+
+  const edges = [];
+  important.forEach(tgt => {
+    if (tgt.responding_to && byId.has(tgt.responding_to)) {
+      const src = byId.get(tgt.responding_to);
+      if (src.importance >= threshold) edges.push({ src, tgt, type: 'reply' });
+    }
+  });
+  const releases = important.filter(e => e.eventType === 'Release');
+  const enablers = important.filter(e => e.eventType === 'Decision' || e.eventType === 'Compliance');
+  releases.forEach(rel => {
+    enablers.forEach(en => {
+      if (en.time <= rel.time && (rel.time - en.time) <= 2 * 3600 * 1000)
+        edges.push({ src: en, tgt: rel, type: 'enables' });
+    });
+  });
+  const inMap = new Map();
+  edges.forEach(({ src, tgt }) => {
+    if (!inMap.has(tgt.message_id)) inMap.set(tgt.message_id, []);
+    inMap.get(tgt.message_id).push(src);
+  });
+  const critNodes = new Set(releases.map(e => e.message_id));
+  const bfsQ = [...critNodes];
+  while (bfsQ.length) {
+    const cur = bfsQ.shift();
+    (inMap.get(cur) || []).forEach(p => {
+      if (!critNodes.has(p.message_id)) { critNodes.add(p.message_id); bfsQ.push(p.message_id); }
+    });
+  }
+
+  // ── Content group (clipped, zoomed) ──
+  const cg = svg.append('g').attr('clip-path','url(#sw-clip)');
+  const x0 = xC();  // initial positions
+
+  // Background dots
+  cg.append('g').selectAll('circle').data(bgEvents).join('circle')
+    .attr('class','bg')
+    .attr('cx', d => x0(d.time))
+    .attr('cy', d => (y(d.actor) || 0) + y.bandwidth()/2)
+    .attr('r', 2).attr('fill', d => ECOL[d.eventType] || ECOL.Neutral).attr('opacity', 0.18)
+    .style('pointer-events','none');
+
+  // Causal edges (bound to data for zoom updates)
+  cg.append('g').selectAll('path').data(edges).join('path')
+    .attr('class','cedge')
+    .attr('fill','none')
+    .attr('stroke', d => {
+      const crit = critNodes.has(d.src.message_id) && critNodes.has(d.tgt.message_id);
+      return crit ? '#bd3f2f' : d.type === 'reply' ? '#6a8aae' : '#f4a261';
+    })
+    .attr('stroke-width', d => (critNodes.has(d.src.message_id) && critNodes.has(d.tgt.message_id)) ? 1.6 : 1)
+    .attr('opacity', d => (critNodes.has(d.src.message_id) && critNodes.has(d.tgt.message_id)) ? 0.7 : 0.3)
+    .attr('marker-end', d => {
+      const crit = critNodes.has(d.src.message_id) && critNodes.has(d.tgt.message_id);
+      return `url(#${crit ? 'sw-arr-crit' : d.type === 'reply' ? 'sw-arr-dim' : 'sw-arr-warn'})`;
+    })
+    .attr('d', d => {
+      const sx = x0(d.src.time), sy = (y(d.src.actor)||0) + y.bandwidth()/2;
+      const tx = x0(d.tgt.time), ty = (y(d.tgt.actor)||0) + y.bandwidth()/2;
+      return `M${sx},${sy}Q${(sx+tx)/2},${(sy+ty)/2-18} ${tx},${ty}`;
+    });
+
+  // Important circles
+  cg.append('g').selectAll('circle').data(important.filter(d => d.eventType !== 'Decision')).join('circle')
+    .attr('class','imp')
+    .attr('cx', d => x0(d.time))
+    .attr('cy', d => (y(d.actor)||0) + y.bandwidth()/2)
+    .attr('r',  d => Math.min(10, 3.5 + d.importance * 0.55))
+    .attr('fill', d => ECOL[d.eventType])
+    .attr('stroke', d => critNodes.has(d.message_id) ? '#bd3f2f' : '#fff')
+    .attr('stroke-width', d => critNodes.has(d.message_id) ? 2.2 : 0.8)
+    .attr('filter', d => critNodes.has(d.message_id) ? 'url(#sw-glow)' : null)
+    .style('cursor','pointer')
+    .on('mousemove', (ev, d) =>
+      showTip(ev, `<b>${d.eventType}</b> · ${d.actor}<br>${fmtT(d.time)}<br>${esc((d.content||'').slice(0,160))}…`))
+    .on('mouseout', hideTip)
+    .on('click', (_, d) => { S.pinned = d; renderMessages(); });
+
+  // Decision diamonds
+  const symD = d3.symbol().type(d3.symbolDiamond);
+  cg.append('g').selectAll('path').data(important.filter(d => d.eventType === 'Decision')).join('path')
+    .attr('class','imp-diamond')
+    .attr('transform', d => `translate(${x0(d.time)},${(y(d.actor)||0) + y.bandwidth()/2})`)
+    .attr('d', d => symD.size(Math.min(100, 32 + d.importance * 9))())
+    .attr('fill', ECOL.Decision)
+    .attr('stroke', d => critNodes.has(d.message_id) ? '#bd3f2f' : '#fff')
+    .attr('stroke-width', d => critNodes.has(d.message_id) ? 2.2 : 0.8)
+    .attr('filter', d => critNodes.has(d.message_id) ? 'url(#sw-glow)' : null)
+    .style('cursor','pointer')
+    .on('mousemove', (ev, d) =>
+      showTip(ev, `<b>Decision</b> · ${d.actor}<br>${fmtT(d.time)}<br>${esc((d.content||'').slice(0,160))}…`))
+    .on('mouseout', hideTip)
+    .on('click', (_, d) => { S.pinned = d; renderMessages(); });
+
+  // ── Axes ──
+  const bottomAxisG = svg.append('g')
+    .attr('transform', `translate(0,${mg.top + S.actors.length * ROW_H})`)
+    .call(d3.axisBottom(x0).ticks(8).tickFormat(d3.timeFormat('%m-%d')));
+  bottomAxisG.selectAll('text').style('font-size','9.5px');
+
+  svg.append('g').attr('transform', `translate(${mg.left - 5},0)`)
+    .call(d3.axisLeft(y).tickSize(0))
+    .selectAll('text').style('font-size','10px').style('font-family','var(--mono)');
+
+  // ── Sliding window brush ──
+  const winLabel = svg.append('text')
+    .attr('y', H - 4).attr('text-anchor','middle')
+    .attr('font-size', 9.5).attr('fill','#006b69').attr('pointer-events','none');
+
+  const bExtent = [[mg.left, mg.top], [W - mg.right, mg.top + S.actors.length * ROW_H]];
+  let tlZooming = false;
+  let brushG;
+
+  const brush = d3.brushX().extent(bExtent)
+    .on('brush', ({ selection }) => {
+      if (!selection || tlZooming) return;
+      const xz = xC();
+      const [t0, t1] = selection.map(px => xz.invert(px));
+      S.brush = [t0, t1];
+      winLabel.attr('x', (selection[0]+selection[1])/2).text(`${fmtT(t0)}  —  ${fmtT(t1)}`);
       renderMessages();
-      renderPathway();
-      renderTimeline();
+    })
+    .on('end', ({ selection }) => {
+      if (tlZooming) return;
+      if (!selection) { S.brush = null; winLabel.text(''); renderAll(false); return; }
+      const xz = xC();
+      const [t0, t1] = selection.map(px => xz.invert(px));
+      S.brush = [t0, t1];
+      winLabel.attr('x', (selection[0]+selection[1])/2).text(`${fmtT(t0)}  —  ${fmtT(t1)}`);
+      renderAll(false);
     });
 
-    document.getElementById('focus-release-btn').addEventListener('click', () => {
-      const releaseEvents = state.events.filter(e => e.eventType === 'Release');
-      if (!releaseEvents.length) {
-        return;
+  brushG = svg.append('g').call(brush);
+  brushG.select('.selection')
+    .attr('fill','rgba(0,107,105,.10)').attr('stroke','#006b69').attr('stroke-width', 1.5);
+
+  // Restore or initialise brush position
+  const xInit = xC();
+  const initPx = S.brush ? S.brush.map(t => xInit(t)) : (() => {
+    const t0 = fullDomain[0];
+    const t1 = new Date(Math.min(+fullDomain[0] + 3 * 86400 * 1000, +fullDomain[1]));
+    S.brush = [t0, t1];
+    return [xInit(t0), xInit(t1)];
+  })();
+  brushG.call(brush.move, initPx);
+  if (S.brush) {
+    const px = S.brush.map(t => xInit(t));
+    winLabel.attr('x', (px[0]+px[1])/2).text(`${fmtT(S.brush[0])}  —  ${fmtT(S.brush[1])}`);
+  }
+
+  // ── Zoom (scroll-wheel only) ──
+  const zoomBehavior = d3.zoom()
+    .scaleExtent([1, 40])
+    .filter(e => e.type === 'wheel')
+    .on('zoom', ({ transform }) => {
+      tlZooming = true;
+      S.zoomState = transform;
+      const xz = transform.rescaleX(xBase);
+
+      // Update zoom level display
+      const lvlEl = document.getElementById('tl-zoom-level');
+      if (lvlEl) lvlEl.textContent = transform.k.toFixed(1) + '×';
+
+      // Live-update axis (more ticks when zoomed in)
+      const ticks = Math.min(14, Math.max(6, Math.floor(8 * Math.pow(transform.k, 0.5))));
+      const fmt   = transform.k > 3 ? d3.timeFormat('%m-%d %H:%M') : d3.timeFormat('%m-%d');
+      bottomAxisG.call(d3.axisBottom(xz).ticks(ticks).tickFormat(fmt));
+      bottomAxisG.selectAll('text').style('font-size','9.5px');
+
+      // Live-update data element positions
+      svg.selectAll('circle.bg').attr('cx', d => xz(d.time));
+      svg.selectAll('path.cedge').attr('d', d => {
+        const sx = xz(d.src.time), sy = (y(d.src.actor)||0) + y.bandwidth()/2;
+        const tx = xz(d.tgt.time), ty = (y(d.tgt.actor)||0) + y.bandwidth()/2;
+        return `M${sx},${sy}Q${(sx+tx)/2},${(sy+ty)/2-18} ${tx},${ty}`;
+      });
+      svg.selectAll('circle.imp').attr('cx', d => xz(d.time));
+      svg.selectAll('path.imp-diamond').attr('transform', d =>
+        `translate(${xz(d.time)},${(y(d.actor)||0) + y.bandwidth()/2})`);
+
+      // Update S.brush based on existing brush pixel selection in new coordinate space
+      const sel = d3.brushSelection(brushG.node());
+      if (sel) {
+        const [t0, t1] = sel.map(px => xz.invert(px));
+        S.brush = [t0, t1];
+        winLabel.attr('x', (sel[0]+sel[1])/2).text(`${fmtT(t0)}  —  ${fmtT(t1)}`);
+        renderMessages();
       }
-      const minTime = d3.min(releaseEvents, d => d.time);
-      const maxTime = d3.max(releaseEvents, d => d.time);
-      const start = new Date(minTime.getTime() - 90 * 60 * 1000);
-      const end = new Date(maxTime.getTime() + 45 * 60 * 1000);
-      state.brushRange = [start, end];
-      state.pinnedEvent = null;
-      renderAll();
+      tlZooming = false;
     });
 
-    function setStatus(message) {
-      statusEl.textContent = message;
-    }
+  S.zoomBehavior = zoomBehavior;
+  svg.call(zoomBehavior);
+  // Restore stored zoom transform (triggers the zoom handler, which sets positions)
+  if (S.zoomState) svg.call(zoomBehavior.transform, S.zoomState);
+  // Sync zoom level display on initial render
+  const lvlEl = document.getElementById('tl-zoom-level');
+  if (lvlEl) lvlEl.textContent = (S.zoomState ? S.zoomState.k : 1).toFixed(1) + '×';
+}
 
-    async function query(sql) {
-      const res = await fetch(API_QUERY_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ database: DATABASE, sql })
+// ═══════════════════════════════
+// MESSAGES
+// ═══════════════════════════════
+function renderMessages() {
+  const scroll  = document.getElementById('msg-scroll');
+  const errDiv  = document.getElementById('msg-err');
+  const notice  = document.getElementById('msg-notice');
+  const hintEl  = document.getElementById('msg-hint');
+  scroll.innerHTML = '';
+  errDiv.innerHTML = '';
+
+  let rows;
+  if (S.pinned) {
+    notice.style.display = 'block';
+    notice.textContent   = 'Showing pinned event thread — click "Clear pinned" to return';
+    const id  = S.pinned.message_id;
+    const par = S.events.find(e => e.message_id === S.pinned.responding_to);
+    const chi = S.events.filter(e => e.responding_to === id);
+    rows = [par, S.pinned, ...chi].filter(Boolean);
+  } else {
+    notice.style.display = 'none';
+    const f = filtered();
+    rows = f.sort((a, b) => a.time - b.time).slice(0, 20);
+    hintEl.textContent = `${f.length} events in window`;
+  }
+
+  if (!rows.length) {
+    errDiv.innerHTML = '<div class="msg-err">No messages in current window.</div>';
+    return;
+  }
+
+  const PREVIEW = 280;
+  for (const r of rows) {
+    const col      = S.acol[r.actor] || '#666';
+    const initials = r.actor.split('_').map(w => w[0] || '').slice(0, 2).join('').toUpperCase();
+    const ecol     = ECOL[r.eventType] || ECOL.Neutral;
+    const full     = r.content || '';
+    const chan      = esc(r.channel || r.message_type || '');
+
+    const div = document.createElement('div');
+    div.className = 'brow';
+    div.innerHTML = `
+      <div class="avatar" style="background:${col}">${initials}</div>
+      <div class="bbody">
+        <div class="bname">${esc(r.agent_label || r.actor)}</div>
+        <div class="bubble" style="background:${col}16;border-color:${col}44"></div>
+        <div class="bfoot">
+          <span>${fmtT(r.time)}</span>
+          ${chan ? `<span>${chan}</span>` : ''}
+          <span class="etag" style="color:${ecol};border-color:${ecol};background:${ecol}1a">${r.eventType}</span>
+        </div>
+      </div>`;
+
+    const bubble = div.querySelector('.bubble');
+    if (full.length > PREVIEW) {
+      const textSpan = document.createElement('span');
+      textSpan.innerHTML = esc(full.slice(0, PREVIEW)) + '…';
+      bubble.appendChild(textSpan);
+      const btn = document.createElement('button');
+      btn.className = 'expand-btn';
+      btn.textContent = 'Show more ▾';
+      let expanded = false;
+      btn.addEventListener('click', () => {
+        expanded = !expanded;
+        textSpan.innerHTML = expanded ? esc(full) : esc(full.slice(0, PREVIEW)) + '…';
+        btn.textContent = expanded ? 'Show less ▴' : 'Show more ▾';
       });
-      if (!res.ok) {
-        throw new Error('Query failed: ' + res.status);
-      }
-      const data = await res.json();
-      if (data.error) {
-        throw new Error(data.error);
-      }
-      return data.rows || [];
+      bubble.appendChild(btn);
+    } else {
+      bubble.innerHTML = esc(full);
     }
 
-    function classifyEvent(event) {
-      const txt = (event.content || '').toLowerCase();
-      const channel = (event.channel || '').toLowerCase();
-      const type = (event.message_type || '').toLowerCase();
+    scroll.appendChild(div);
+  }
+}
 
-      const hasDecision = /\b(decide|decision|approve|approved|authorize|authorized|green\s?light|ok\s?to\s?post|go\s?ahead)\b/.test(txt);
-      const hasCompliance = /\b(embargo|policy|compliance|legal\sreview|enforce|enforcement|trust\s&safety|moderation|gate)\b/.test(txt);
-      const hasRelease = /\b(release|released|publish|published|public\spost|post\sit|go\slive|share\sit|leak|leaked)\b/.test(txt)
-        || channel.includes('post') || type.includes('public_post');
-      const hasRisk = /\b(risk|concern|warning|flag|unsafe|violation|breach|expose|sensitive|private)\b/.test(txt);
+// ═══════════════════════════════
+// SUNBURST
+// ═══════════════════════════════
+function renderSunburst() {
+  const svg = d3.select('#sv-sunburst');
+  svg.selectAll('*').remove();
+  const { W, H } = cbSize('cb-sunburst');
+  svg.attr('width', W).attr('height', H);
 
-      if (hasDecision) return 'Decision';
-      if (hasCompliance) return 'Compliance';
-      if (hasRelease) return 'Release';
-      if (hasRisk) return 'RiskSignal';
-      if (type.includes('one_on_one') || type.includes('side_huddle') || channel.includes('huddle')) return 'Coordination';
-      return 'Neutral';
-    }
+  const f   = filtered();
+  const grp = d3.rollups(f, v => v.length, d => d.actor, d => d.eventType);
 
-    function scoreImportance(event) {
-      let score = 1;
-      if (event.eventType === 'Release') score += 5;
-      if (event.eventType === 'Decision') score += 4;
-      if (event.eventType === 'Compliance') score += 3;
-      if (event.eventType === 'RiskSignal') score += 2;
-      if ((event.content || '').toLowerCase().includes('embargo')) score += 3;
-      if ((event.channel || '').toLowerCase().includes('anonymous_post')) score += 2;
-      if ((event.message_type || '').toLowerCase().includes('public_post')) score += 2;
-      if (event.responding_to) score += 1;
-      return score;
-    }
+  if (!grp.length) {
+    svg.append('text').attr('x',W/2).attr('y',H/2).attr('text-anchor','middle').attr('fill','#888').attr('font-size',12).text('No data');
+    return;
+  }
 
-    function parseRecipients(raw, actor, actors) {
-      if (!raw) return [];
-      let parsed = [];
-      try {
-        if (raw.trim().startsWith('[')) {
-          parsed = JSON.parse(raw);
-        } else {
-          parsed = raw.split(',').map(s => s.trim()).filter(Boolean);
-        }
-      } catch {
-        parsed = raw.split(',').map(s => s.trim()).filter(Boolean);
-      }
-      const normalized = parsed.map(v => String(v).replace(/^"|"$/g, '').trim().toLowerCase());
-      if (normalized.includes('all')) {
-        return actors.filter(a => a !== actor);
-      }
-      return normalized.filter(r => r && r !== actor);
-    }
+  const rootData = {
+    name: 'all',
+    children: grp.map(([actor, es]) => ({
+      name: actor,
+      children: es.map(([type, count]) => ({ name: type, value: count }))
+    }))
+  };
 
-    function computeCausalLinks(eventsById, events) {
-      const links = [];
+  const root   = d3.hierarchy(rootData).sum(d => d.value || 0);
+  const radius = Math.min(W, H) / 2 - 10;
+  d3.partition().size([2 * Math.PI, radius])(root);
 
-      for (const e of events) {
-        if (e.responding_to && eventsById.has(e.responding_to)) {
-          const src = eventsById.get(e.responding_to);
-          links.push({ source: src, target: e, relation: 'reply' });
-        }
-      }
+  const arc = d3.arc()
+    .startAngle(d => d.x0).endAngle(d => d.x1)
+    .innerRadius(d => d.y0).outerRadius(d => d.y1 - 1);
 
-      const decisions = events.filter(e => e.eventType === 'Decision' || e.eventType === 'Compliance');
-      const releases = events.filter(e => e.eventType === 'Release');
-      for (const r of releases) {
-        const candidates = decisions
-          .filter(d => d.time <= r.time && (r.time - d.time) <= 3 * 60 * 60 * 1000)
-          .sort((a, b) => b.time - a.time)
-          .slice(0, 2);
-        for (const d of candidates) {
-          links.push({ source: d, target: r, relation: 'decision_to_release' });
-        }
-      }
+  const g = svg.append('g').attr('transform', `translate(${W/2},${H/2})`);
 
-      return links;
-    }
+  g.selectAll('path')
+    .data(root.descendants().filter(d => d.depth > 0)).join('path')
+    .attr('d', arc)
+    .attr('fill', d => d.depth === 1
+      ? (S.acol[d.data.name] || '#9db2ad')
+      : (ECOL[d.data.name]   || '#9aa4ab'))
+    .attr('stroke','#fff8f0').attr('stroke-width', 1)
+    .style('cursor','pointer')
+    .on('mousemove', (ev, d) =>
+      showTip(ev, `${d.ancestors().map(a => a.data.name).reverse().join(' → ')}<br>${d.value} events`))
+    .on('mouseout', hideTip);
 
-    function getFilteredEvents() {
-      if (!state.brushRange) return state.events;
-      return state.events.filter(e => e.time >= state.brushRange[0] && e.time <= state.brushRange[1]);
-    }
+  g.append('text').attr('text-anchor','middle').attr('font-size', 10)
+    .attr('fill','#6a7268').attr('font-family','var(--mono)').text('actor → type');
+}
 
-    function formatTime(dt) {
-      return d3.timeFormat('%Y-%m-%d %H:%M')(dt);
-    }
+// ═══════════════════════════════
+// WORD CLOUD
+// ═══════════════════════════════
+function renderCloud() {
+  const svg = d3.select('#sv-cloud');
+  svg.selectAll('*').remove();
+  const { W, H } = cbSize('cb-cloud');
+  svg.attr('width', W).attr('height', H);
 
-    function renderOverview() {
-      const filtered = getFilteredEvents();
-      const releaseCount = filtered.filter(d => d.eventType === 'Release').length;
-      const decisionCount = filtered.filter(d => d.eventType === 'Decision').length;
-      const riskCount = filtered.filter(d => d.eventType === 'RiskSignal').length;
-      const complianceCount = filtered.filter(d => d.eventType === 'Compliance').length;
-      const topActor = d3.rollups(filtered, v => v.length, d => d.actor).sort((a, b) => b[1] - a[1])[0];
+  const f    = filtered();
+  const freq = new Map();
+  for (const e of f) {
+    for (const w of tokens(e.content)) freq.set(w, (freq.get(w) || 0) + 1);
+  }
 
-      const rows = [
-        ['Events in View', filtered.length],
-        ['Release Actions', releaseCount],
-        ['Decision Points', decisionCount],
-        ['Compliance Signals', complianceCount],
-        ['Top Active Actor', topActor ? topActor[0] : 'n/a']
-      ];
+  const words = Array.from(freq.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 65)
+    .map(([text, count]) => ({ text, count }));
 
-      const html = rows.map(([label, value]) => (
-        `<div class="metric"><div class="label">${label}</div><div class="value">${value}</div></div>`
-      )).join('');
-      document.getElementById('overview').innerHTML = html;
-    }
+  if (!words.length) {
+    svg.append('text').attr('x',W/2).attr('y',H/2).attr('text-anchor','middle').attr('fill','#888').attr('font-size',12).text('No keywords');
+    return;
+  }
 
-    function renderLegend() {
-      const container = document.getElementById('timeline-legend');
-      container.innerHTML = '';
-      for (const [name, color] of Object.entries(TYPE_COLORS)) {
-        const item = document.createElement('span');
-        item.className = 'legend-item';
-        item.innerHTML = `<span class="swatch" style="background:${color}"></span>${name}`;
-        container.appendChild(item);
+  const fSize = d3.scaleSqrt().domain(d3.extent(words, d => d.count)).range([10, 42]);
+  const cx = W/2, cy = H/2;
+  const placed = [];
+  const pal = ['#006b69','#c45c2f','#3a5f8f','#7a4018','#4a3a8a','#1a7a50'];
+
+  for (const w of words) {
+    const fs = fSize(w.count);
+    const ww = w.text.length * fs * 0.57;
+    const wh = fs * 1.12;
+    let ok = false;
+
+    for (let r = 0, ang = Math.random() * Math.PI * 2; r < Math.max(W, H) * 0.75; ang += 0.32, r += 0.44) {
+      const bx = cx + r * Math.cos(ang) - ww/2;
+      const by = cy + r * Math.sin(ang) - wh/2;
+      if (bx < 3 || by < 3 || bx + ww > W - 3 || by + wh > H - 3) continue;
+      const box = { x: bx, y: by, w: ww, h: wh };
+      if (placed.every(p =>
+        box.x + box.w < p.x || p.x + p.w < box.x ||
+        box.y + box.h < p.y || p.y + p.h < box.y
+      )) {
+        placed.push({ ...box, text: w.text, count: w.count, fs });
+        ok = true;
+        break;
       }
     }
 
-    function renderTimeline() {
-      const svg = d3.select('#timeline');
-      svg.selectAll('*').remove();
-
-      const width = document.getElementById('timeline').clientWidth;
-      const height = Math.max(460, Math.min(620, window.innerHeight * 0.58));
-      svg.attr('viewBox', `0 0 ${width} ${height}`);
-
-      const margin = { top: 20, right: 22, bottom: 115, left: 130 };
-      const lineAreaHeight = 78;
-      const laneTop = margin.top + lineAreaHeight + 20;
-      const laneHeight = height - margin.bottom - laneTop;
-
-      const actors = state.actors;
-      const filtered = getFilteredEvents();
-      const domain = state.brushRange || d3.extent(state.events, d => d.time);
-
-      const x = d3.scaleTime().domain(domain).range([margin.left, width - margin.right]);
-      const y = d3.scaleBand().domain(actors).range([laneTop, laneTop + laneHeight]).paddingInner(0.18);
-
-      const typeSeries = ['Release', 'Decision', 'Compliance', 'RiskSignal'];
-      const binned = d3.rollups(
-        filtered,
-        v => {
-          const counts = Object.fromEntries(typeSeries.map(t => [t, 0]));
-          v.forEach(d => {
-            if (counts[d.eventType] !== undefined) counts[d.eventType] += 1;
-          });
-          return counts;
-        },
-        d => +d3.timeHour.floor(d.time)
-      ).sort((a, b) => a[0] - b[0]);
-
-      const lineY = d3.scaleLinear()
-        .domain([0, d3.max(binned, d => d3.max(typeSeries, t => d[1][t])) || 1])
-        .range([laneTop - 8, margin.top + 8]);
-
-      const line = d3.line()
-        .x(d => x(new Date(d[0])))
-        .y(d => lineY(d[1]))
-        .curve(d3.curveMonotoneX);
-
-      const linesLayer = svg.append('g');
-      typeSeries.forEach(type => {
-        const points = binned.map(([k, v]) => [k, v[type] || 0]);
-        linesLayer.append('path')
-          .datum(points)
-          .attr('fill', 'none')
-          .attr('stroke', TYPE_COLORS[type])
-          .attr('stroke-width', 2)
-          .attr('opacity', 0.9)
-          .attr('d', line);
-      });
-
-      linesLayer.append('text')
-        .attr('x', margin.left)
-        .attr('y', margin.top + 2)
-        .attr('font-size', 11)
-        .attr('fill', '#5f666f')
-        .text('Hourly signal intensity');
-
-      svg.append('g')
-        .selectAll('line')
-        .data(actors)
-        .join('line')
-        .attr('x1', margin.left)
-        .attr('x2', width - margin.right)
-        .attr('y1', d => y(d) + y.bandwidth() / 2)
-        .attr('y2', d => y(d) + y.bandwidth() / 2)
-        .attr('stroke', 'rgba(35, 45, 50, 0.16)')
-        .attr('stroke-width', 1);
-
-      const visibleLinks = state.causalLinks
-        .filter(l => l.source.time >= domain[0] && l.target.time <= domain[1])
-        .filter((_, i) => i < 55);
-
-      svg.append('g')
-        .attr('opacity', 0.5)
-        .selectAll('path')
-        .data(visibleLinks)
-        .join('path')
-        .attr('fill', 'none')
-        .attr('stroke', d => d.relation === 'decision_to_release' ? '#b85a3b' : '#6f8a9e')
-        .attr('stroke-dasharray', d => d.relation === 'decision_to_release' ? '4 3' : '2 3')
-        .attr('stroke-width', 1.2)
-        .attr('d', d => {
-          const sx = x(d.source.time);
-          const sy = y(d.source.actor) + y.bandwidth() / 2;
-          const tx = x(d.target.time);
-          const ty = y(d.target.actor) + y.bandwidth() / 2;
-          const cx = (sx + tx) / 2;
-          return `M${sx},${sy} Q${cx},${Math.min(sy, ty) - 25} ${tx},${ty}`;
-        });
-
-      const nodeGroup = svg.append('g');
-
-      nodeGroup.selectAll('path.decision')
-        .data(filtered.filter(d => d.eventType === 'Decision'))
-        .join('path')
-        .attr('class', 'decision')
-        .attr('transform', d => `translate(${x(d.time)},${y(d.actor) + y.bandwidth() / 2})`)
-        .attr('d', d3.symbol().type(d3.symbolDiamond).size(70))
-        .attr('fill', d => TYPE_COLORS[d.eventType])
-        .attr('stroke', '#1f262c')
-        .attr('stroke-width', d => state.pinnedEvent && state.pinnedEvent.message_id === d.message_id ? 2.3 : 0.5)
-        .on('mousemove', showTip)
-        .on('mouseout', hideTip)
-        .on('click', pinEvent);
-
-      nodeGroup.selectAll('circle.event')
-        .data(filtered.filter(d => d.eventType !== 'Decision'))
-        .join('circle')
-        .attr('class', 'event')
-        .attr('cx', d => x(d.time))
-        .attr('cy', d => y(d.actor) + y.bandwidth() / 2)
-        .attr('r', d => Math.min(8, 2.4 + d.importance * 0.45))
-        .attr('fill', d => TYPE_COLORS[d.eventType])
-        .attr('stroke', d => state.pinnedEvent && state.pinnedEvent.message_id === d.message_id ? '#10161f' : '#fff')
-        .attr('stroke-width', d => state.pinnedEvent && state.pinnedEvent.message_id === d.message_id ? 2.4 : 0.7)
-        .attr('opacity', d => d.eventType === 'Neutral' ? 0.55 : 0.95)
-        .on('mousemove', showTip)
-        .on('mouseout', hideTip)
-        .on('click', pinEvent);
-
-      svg.append('g')
-        .attr('transform', `translate(0,${laneTop + laneHeight})`)
-        .call(d3.axisBottom(x).ticks(8).tickFormat(d3.timeFormat('%m-%d %H:%M')))
-        .selectAll('text')
-        .style('font-size', '11px');
-
-      svg.append('g')
-        .attr('transform', `translate(${margin.left - 8},0)`)
-        .call(d3.axisLeft(y).tickSize(0))
-        .selectAll('text')
-        .style('font-size', '11px')
-        .style('font-family', 'var(--mono)');
-
-      const contextY = height - 76;
-      const contextHeight = 36;
-      const xContext = d3.scaleTime().domain(d3.extent(state.events, d => d.time)).range([margin.left, width - margin.right]);
-      const hourly = d3.rollups(state.events, v => v.length, d => +d3.timeHour.floor(d.time)).sort((a, b) => a[0] - b[0]);
-      const yContext = d3.scaleLinear().domain([0, d3.max(hourly, d => d[1]) || 1]).range([contextY + contextHeight, contextY]);
-
-      const area = d3.area()
-        .x(d => xContext(new Date(d[0])))
-        .y0(contextY + contextHeight)
-        .y1(d => yContext(d[1]))
-        .curve(d3.curveMonotoneX);
-
-      svg.append('path')
-        .datum(hourly)
-        .attr('fill', 'rgba(0,122,120,0.27)')
-        .attr('stroke', '#007a78')
-        .attr('stroke-width', 1)
-        .attr('d', area);
-
-      svg.append('text')
-        .attr('x', margin.left)
-        .attr('y', contextY - 5)
-        .attr('font-size', 11)
-        .attr('fill', '#5f666f')
-        .text('Brush to filter');
-
-      const brush = d3.brushX()
-        .extent([[margin.left, contextY], [width - margin.right, contextY + contextHeight]])
-        .on('brush end', ({ selection }) => {
-          if (!selection) {
-            state.brushRange = null;
-            renderAll();
-            return;
-          }
-          const [x0, x1] = selection;
-          state.brushRange = [xContext.invert(x0), xContext.invert(x1)];
-          renderAll(false);
-        });
-
-      const brushLayer = svg.append('g').call(brush);
-      const active = state.brushRange || d3.extent(state.events, d => d.time);
-      brushLayer.call(brush.move, active.map(xContext));
-
-      function showTip(event, d) {
-        const maxChars = 170;
-        tooltip
-          .style('opacity', 1)
-          .style('left', (event.clientX + 12) + 'px')
-          .style('top', (event.clientY + 12) + 'px')
-          .html(`${d.eventType} | ${d.actor}<br>${formatTime(d.time)}<br>${(d.content || '').slice(0, maxChars)}${(d.content || '').length > maxChars ? '...' : ''}`);
-      }
-
-      function hideTip() {
-        tooltip.style('opacity', 0);
-      }
-
-      function pinEvent(_event, d) {
-        state.pinnedEvent = d;
-        renderAll();
-      }
+    if (!ok && placed.length < 60) {
+      placed.push({ x: cx - ww/2, y: cy - wh/2, w: ww, h: wh, text: w.text, count: w.count, fs });
     }
+  }
 
-    function renderMessages() {
-      const warningEl = document.getElementById('message-warning');
-      const list = document.getElementById('messages-list');
-      list.innerHTML = '';
-      warningEl.innerHTML = '';
-      const filtered = getFilteredEvents();
+  svg.selectAll('text').data(placed).join('text')
+    .attr('x', d => d.x + d.w/2)
+    .attr('y', d => d.y + d.h/2)
+    .attr('text-anchor','middle')
+    .attr('dominant-baseline','middle')
+    .attr('font-size',  d => d.fs)
+    .attr('font-weight', d => d.fs > 24 ? 700 : 500)
+    .attr('fill', (_, i) => pal[i % pal.length])
+    .attr('opacity', .9)
+    .text(d => d.text)
+    .on('mousemove', (ev, d) => showTip(ev, `${d.text}: ${d.count}×`))
+    .on('mouseout', hideTip);
+}
 
-      let rows = [];
-      if (state.pinnedEvent) {
-        const id = state.pinnedEvent.message_id;
-        const parent = state.events.find(e => e.message_id === state.pinnedEvent.responding_to);
-        const children = state.events.filter(e => e.responding_to === id);
-        rows = [parent, state.pinnedEvent, ...children].filter(Boolean);
-      } else {
-        rows = filtered
-          .sort((a, b) => (b.importance - a.importance) || (a.time - b.time))
-          .slice(0, 14);
-      }
+// ═══════════════════════════════
+// NETWORK
+// ═══════════════════════════════
+function renderNetwork() {
+  if (S.sim) { S.sim.stop(); S.sim = null; }
 
-      if (!rows.length) {
-        warningEl.innerHTML = '<div class="warning">No events in current filter window.</div>';
-        return;
-      }
+  const svg = d3.select('#sv-net');
+  svg.selectAll('*').remove();
+  const { W, H } = cbSize('cb-net');
+  svg.attr('width', W).attr('height', H);
 
-      if (state.pinnedEvent) {
-        warningEl.innerHTML = '<div class="warning">Pinned event context thread shown. Click "Clear pinned event" to return to ranked regional messages.</div>';
-      }
+  const f    = filtered();
+  const acts = S.actors;
 
-      for (const row of rows) {
-        const card = document.createElement('div');
-        card.className = 'msg-card';
-        card.style.borderLeftColor = TYPE_COLORS[row.eventType] || '#738087';
-        card.innerHTML = `
-          <div class="msg-meta">
-            <span>${row.actor} | ${row.channel || row.message_type || 'n/a'}</span>
-            <span>${formatTime(row.time)}</span>
-          </div>
-          <div class="msg-text">${escapeHtml((row.content || '').slice(0, 420))}</div>
-          <span class="event-badge">${row.eventType} score:${row.importance}</span>
-        `;
-        list.appendChild(card);
-      }
+  const emap = new Map();
+  for (const e of f) {
+    for (const tgt of parseRec(e.recipients || '', e.actor, acts)) {
+      if (!acts.includes(tgt)) continue;
+      const k = `${e.actor}|||${tgt}`;
+      emap.set(k, (emap.get(k) || 0) + 1);
     }
+  }
 
-    function renderSunburst() {
-      const svg = d3.select('#sunburst');
-      svg.selectAll('*').remove();
-      const width = document.getElementById('sunburst').clientWidth;
-      const height = document.getElementById('sunburst').clientHeight;
-      svg.attr('viewBox', `0 0 ${width} ${height}`);
+  const nodes = acts.map(a => ({ id: a }));
+  const links = Array.from(emap.entries())
+    .map(([k, count]) => {
+      const [source, target] = k.split('|||');
+      return { source, target, count };
+    })
+    .filter(l => l.count > 0);
 
-      const filtered = getFilteredEvents();
-      const grouped = d3.rollups(filtered, v => v.length, d => d.actor, d => d.eventType);
-      const rootObj = {
-        name: 'all',
-        children: grouped.map(([actor, entries]) => ({
-          name: actor,
-          children: entries.map(([type, count]) => ({ name: type, value: count }))
-        }))
-      };
+  if (!links.length) {
+    svg.append('text').attr('x',W/2).attr('y',H/2).attr('text-anchor','middle').attr('fill','#888').attr('font-size',12).text('No directed edges in window');
+    return;
+  }
 
-      const root = d3.hierarchy(rootObj).sum(d => d.value || 0);
-      const radius = Math.min(width, height) / 2 - 12;
-      d3.partition().size([2 * Math.PI, radius])(root);
+  const deg = new Map();
+  links.forEach(l => {
+    deg.set(l.source, (deg.get(l.source) || 0) + l.count);
+    deg.set(l.target, (deg.get(l.target) || 0) + l.count);
+  });
 
-      const arc = d3.arc()
-        .startAngle(d => d.x0)
-        .endAngle(d => d.x1)
-        .innerRadius(d => d.y0)
-        .outerRadius(d => d.y1 - 1);
+  const rScale = d3.scaleSqrt()
+    .domain(d3.extent(nodes, n => deg.get(n.id) || 1))
+    .range([13, 30]);
 
-      const g = svg.append('g').attr('transform', `translate(${width / 2},${height / 2})`);
+  const wScale = d3.scaleLinear()
+    .domain(d3.extent(links, l => l.count))
+    .range([1.5, 7]);
 
-      g.selectAll('path')
-        .data(root.descendants().filter(d => d.depth > 0))
-        .join('path')
-        .attr('d', arc)
-        .attr('fill', d => {
-          if (d.depth === 1) return '#9db2ad';
-          return TYPE_COLORS[d.data.name] || '#9aa4ab';
-        })
-        .attr('stroke', '#fff8ec')
-        .attr('stroke-width', 1)
-        .append('title')
-        .text(d => `${d.ancestors().map(a => a.data.name).reverse().join(' > ')}: ${d.value}`);
+  const defs = svg.append('defs');
+  defs.append('marker')
+    .attr('id','netarr').attr('viewBox','0 -5 10 10')
+    .attr('refX', 22).attr('refY', 0)
+    .attr('markerWidth', 5).attr('markerHeight', 5).attr('orient','auto')
+    .append('path').attr('d','M0,-5L10,0L0,5').attr('fill','rgba(90,90,100,.5)');
 
-      g.append('text')
-        .attr('text-anchor', 'middle')
-        .attr('font-size', 12)
-        .attr('font-family', 'var(--mono)')
-        .attr('fill', '#5f666f')
-        .text('Actor -> Event type');
-    }
+  const linkEls = svg.append('g').selectAll('line').data(links).join('line')
+    .attr('stroke','rgba(90,90,100,.38)')
+    .attr('stroke-width', d => wScale(d.count))
+    .attr('marker-end','url(#netarr)');
 
-    function tokenize(text) {
-      return (text || '')
-        .toLowerCase()
-        .replace(/[^a-z0-9\s]/g, ' ')
-        .split(/\s+/)
-        .filter(w => w.length > 2 && !STOP_WORDS.has(w));
-    }
+  const nodeEls = svg.append('g').selectAll('g').data(nodes).join('g')
+    .style('cursor','grab')
+    .call(d3.drag()
+      .on('start', (ev, d) => { if (!ev.active) sim.alphaTarget(.3).restart(); d.fx = d.x; d.fy = d.y; })
+      .on('drag',  (ev, d) => { d.fx = ev.x; d.fy = ev.y; })
+      .on('end',   (ev, d) => { if (!ev.active) sim.alphaTarget(0); d.fx = null; d.fy = null; }));
 
-    function renderKeywordCloud() {
-      const svg = d3.select('#keyword-cloud');
-      svg.selectAll('*').remove();
-      const width = document.getElementById('keyword-cloud').clientWidth;
-      const height = document.getElementById('keyword-cloud').clientHeight;
-      svg.attr('viewBox', `0 0 ${width} ${height}`);
+  nodeEls.append('circle')
+    .attr('r',  d => rScale(deg.get(d.id) || 1))
+    .attr('fill', d => S.acol[d.id] || APAL[0])
+    .attr('stroke','#fff').attr('stroke-width', 2);
 
-      const filtered = getFilteredEvents();
-      const freq = new Map();
-      for (const e of filtered) {
-        for (const w of tokenize(e.content)) {
-          freq.set(w, (freq.get(w) || 0) + 1);
-        }
-      }
+  nodeEls.append('text')
+    .attr('dy', 3.5).attr('text-anchor','middle')
+    .attr('font-size', 9).attr('font-family','var(--mono)').attr('fill','#fff')
+    .attr('pointer-events','none')
+    .text(d => d.id.replace('_agent',''));
 
-      let words = Array.from(freq.entries())
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 55)
-        .map(([text, count]) => ({ text, count }));
+  nodeEls
+    .on('mousemove', (ev, d) =>
+      showTip(ev, `<b>${d.id}</b><br>Total flow: ${deg.get(d.id) || 0} messages`))
+    .on('mouseout', hideTip);
 
-      if (!words.length) {
-        svg.append('text')
-          .attr('x', width / 2)
-          .attr('y', height / 2)
-          .attr('text-anchor', 'middle')
-          .attr('fill', '#6b7172')
-          .text('No keywords in selection');
-        return;
-      }
+  linkEls
+    .on('mousemove', (ev, l) =>
+      showTip(ev, `${l.source.id || l.source} → ${l.target.id || l.target}<br>${l.count} messages`))
+    .on('mouseout', hideTip);
 
-      const size = d3.scaleSqrt()
-        .domain(d3.extent(words, d => d.count))
-        .range([11, 44]);
-
-      const placed = [];
-      const centerX = width / 2;
-      const centerY = height / 2;
-
-      for (const word of words) {
-        const fontSize = size(word.count);
-        let angle = 0;
-        let radius = 0;
-        let ok = false;
-
-        while (!ok && radius < Math.max(width, height)) {
-          const x = centerX + radius * Math.cos(angle);
-          const y = centerY + radius * Math.sin(angle);
-          const w = word.text.length * (fontSize * 0.55);
-          const h = fontSize;
-          const box = { x: x - w / 2, y: y - h / 2, w, h };
-
-          ok = box.x > 3 && box.y > 3 && (box.x + box.w) < width - 3 && (box.y + box.h) < height - 3;
-          if (ok) {
-            for (const p of placed) {
-              if (!(box.x + box.w < p.x || p.x + p.w < box.x || box.y + box.h < p.y || p.y + p.h < box.y)) {
-                ok = false;
-                break;
-              }
-            }
-          }
-
-          if (ok) {
-            placed.push({ ...box, text: word.text, count: word.count, fontSize });
-            break;
-          }
-
-          angle += 0.32;
-          radius += 0.44;
-        }
-      }
-
-      svg.append('g')
-        .selectAll('text')
-        .data(placed)
-        .join('text')
-        .attr('x', d => d.x + d.w / 2)
-        .attr('y', d => d.y + d.h / 2)
-        .attr('text-anchor', 'middle')
-        .attr('dominant-baseline', 'middle')
-        .attr('font-size', d => d.fontSize)
-        .attr('font-weight', d => d.fontSize > 30 ? 700 : 500)
-        .attr('fill', (_d, i) => i % 4 === 0 ? '#bd3f2f' : i % 2 === 0 ? '#007a78' : '#3f5f7e')
-        .attr('opacity', 0.92)
-        .text(d => d.text)
-        .append('title')
-        .text(d => `${d.text}: ${d.count}`);
-    }
-
-    function renderNetwork() {
-      const svg = d3.select('#network');
-      svg.selectAll('*').remove();
-      const width = document.getElementById('network').clientWidth;
-      const height = document.getElementById('network').clientHeight;
-      svg.attr('viewBox', `0 0 ${width} ${height}`);
-
-      const filtered = getFilteredEvents();
-      const actors = state.actors;
-      const edgeMap = new Map();
-
-      for (const e of filtered) {
-        const rec = parseRecipients(e.recipients || '', e.actor, actors);
-        for (const target of rec) {
-          const key = `${e.actor}->${target}`;
-          edgeMap.set(key, (edgeMap.get(key) || 0) + 1);
-        }
-      }
-
-      const nodes = actors.map(a => ({ id: a }));
-      const links = Array.from(edgeMap.entries()).map(([k, count]) => {
-        const [source, target] = k.split('->');
-        return { source, target, count };
-      }).filter(l => l.count > 0);
-
-      if (!links.length) {
-        svg.append('text')
-          .attr('x', width / 2)
-          .attr('y', height / 2)
-          .attr('text-anchor', 'middle')
-          .attr('fill', '#6b7172')
-          .text('No directed recipient edges in current window');
-        return;
-      }
-
-      const linkWidth = d3.scaleLinear().domain(d3.extent(links, d => d.count)).range([1.2, 6]);
-
-      const degree = new Map();
-      links.forEach(l => {
-        degree.set(l.source, (degree.get(l.source) || 0) + l.count);
-        degree.set(l.target, (degree.get(l.target) || 0) + l.count);
-      });
-
-      const radius = d3.scaleSqrt()
-        .domain(d3.extent(nodes, n => degree.get(n.id) || 1))
-        .range([11, 30]);
-
-      const defs = svg.append('defs');
-      defs.append('marker')
-        .attr('id', 'arrow')
-        .attr('viewBox', '0 -5 10 10')
-        .attr('refX', 17)
-        .attr('refY', 0)
-        .attr('markerWidth', 6)
-        .attr('markerHeight', 6)
-        .attr('orient', 'auto')
-        .append('path')
-        .attr('d', 'M0,-5L10,0L0,5')
-        .attr('fill', '#7a6b5d');
-
-      const sim = d3.forceSimulation(nodes)
-        .force('link', d3.forceLink(links).id(d => d.id).distance(l => 100 - Math.min(45, l.count * 2)))
-        .force('charge', d3.forceManyBody().strength(-260))
-        .force('center', d3.forceCenter(width / 2, height / 2))
-        .force('collision', d3.forceCollide().radius(d => radius(degree.get(d.id) || 1) + 8));
-
-      const link = svg.append('g')
-        .attr('stroke', '#7a6b5d')
-        .attr('stroke-opacity', 0.55)
-        .selectAll('line')
-        .data(links)
-        .join('line')
-        .attr('stroke-width', d => linkWidth(d.count))
-        .attr('marker-end', 'url(#arrow)');
-
-      const node = svg.append('g')
-        .selectAll('g')
-        .data(nodes)
-        .join('g')
-        .call(drag(sim));
-
-      node.append('circle')
-        .attr('r', d => radius(degree.get(d.id) || 1))
-        .attr('fill', '#007a78')
-        .attr('stroke', '#11413f')
-        .attr('stroke-width', 1.2);
-
-      node.append('text')
-        .attr('dy', 4)
-        .attr('text-anchor', 'middle')
-        .attr('font-size', 10)
-        .attr('fill', '#fff')
-        .attr('font-family', 'var(--mono)')
-        .text(d => d.id.replace('_agent', ''));
-
-      link.append('title').text(d => `${d.source.id || d.source} -> ${d.target.id || d.target}: ${d.count}`);
-      node.append('title').text(d => `${d.id} total flow: ${degree.get(d.id) || 0}`);
-
-      sim.on('tick', () => {
-        link
-          .attr('x1', d => d.source.x)
-          .attr('y1', d => d.source.y)
-          .attr('x2', d => d.target.x)
-          .attr('y2', d => d.target.y);
-
-        node.attr('transform', d => `translate(${d.x},${d.y})`);
-      });
-    }
-
-    function drag(simulation) {
-      function dragstarted(event) {
-        if (!event.active) simulation.alphaTarget(0.3).restart();
-        event.subject.fx = event.subject.x;
-        event.subject.fy = event.subject.y;
-      }
-
-      function dragged(event) {
-        event.subject.fx = event.x;
-        event.subject.fy = event.y;
-      }
-
-      function dragended(event) {
-        if (!event.active) simulation.alphaTarget(0);
-        event.subject.fx = null;
-        event.subject.fy = null;
-      }
-
-      return d3.drag().on('start', dragstarted).on('drag', dragged).on('end', dragended);
-    }
-
-    function buildEmbargoPathway() {
-      const filtered = getFilteredEvents();
-      const releases = filtered
-        .filter(e => e.eventType === 'Release')
-        .sort((a, b) => a.time - b.time);
-
-      const steps = [];
-
-      for (const release of releases.slice(-3)) {
-        const prior = filtered
-          .filter(e => e.time <= release.time && (release.time - e.time) <= 2 * 60 * 60 * 1000)
-          .sort((a, b) => b.time - a.time);
-
-        const decision = prior.find(e => e.eventType === 'Decision');
-        const compliance = prior.find(e => e.eventType === 'Compliance');
-        const risk = prior.find(e => e.eventType === 'RiskSignal');
-
-        const missingGate = !compliance || ((release.time - compliance.time) > 60 * 60 * 1000);
-
-        steps.push({
-          release,
-          decision,
-          compliance,
-          risk,
-          missingGate
-        });
-      }
-
-      return steps;
-    }
-
-    function renderPathway() {
-      const container = document.getElementById('pathway');
-      const steps = buildEmbargoPathway();
-      if (!steps.length) {
-        container.innerHTML = '<div class="path-step">No release actions in this window. Expand timeline brush to inspect pre-embargo chain.</div>';
-        return;
-      }
-
-      container.innerHTML = steps.map(step => {
-        const release = `${formatTime(step.release.time)} | ${step.release.actor} | ${step.release.channel || 'n/a'}`;
-        const decision = step.decision ? `${formatTime(step.decision.time)} ${step.decision.actor}` : 'none in prior 2h';
-        const compliance = step.compliance ? `${formatTime(step.compliance.time)} ${step.compliance.actor}` : 'none in prior 2h';
-        const risk = step.risk ? `${formatTime(step.risk.time)} ${step.risk.actor}` : 'no explicit risk signal';
-
-        return `
-          <div class="path-step">
-            <strong>Release:</strong> ${release}<br>
-            <strong>Decision point:</strong> ${decision}<br>
-            <strong>Compliance checkpoint:</strong> ${compliance}<br>
-            <strong>Risk signal:</strong> ${risk}<br>
-            <strong>Embargo bypass flag:</strong> ${step.missingGate ? 'Likely bypass (stale/missing compliance gate)' : 'Compliance signal existed'}
-          </div>
-        `;
-      }).join('');
-    }
-
-    function renderAll(includeTimeline = true) {
-      if (includeTimeline) renderTimeline();
-      renderOverview();
-      renderMessages();
-      renderSunburst();
-      renderKeywordCloud();
-      renderNetwork();
-      renderPathway();
-    }
-
-    function escapeHtml(text) {
-      return text
-        .replaceAll('&', '&amp;')
-        .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;');
-    }
-
-    async function init(force = false) {
-      setStatus(force ? 'Reloading from PostgreSQL...' : 'Loading PostgreSQL data...');
-      try {
-        const [communications, participants] = await Promise.all([
-          query(`
-            SELECT
-              round_id,
-              message_index,
-              message_id,
-              agent_id,
-              agent_role,
-              agent_label,
-              channel,
-              recipients,
-              message_type,
-              responding_to,
-              content,
-              timestamp
-            FROM mc1.communications
-            WHERE timestamp IS NOT NULL
-            ORDER BY timestamp::timestamp, round_id, message_index
-          `),
-          query(`
-            SELECT
-              round_id,
-              participant_index,
-              agent_id,
-              agent_role,
-              agent_label,
-              declared_action
-            FROM mc1.participants
-            ORDER BY round_id, participant_index
-          `)
-        ]);
-
-        const events = communications
-          .map(row => {
-            const time = new Date(row.timestamp);
-            if (Number.isNaN(+time)) return null;
-            const actor = String(row.agent_role || row.agent_id || 'unknown').toLowerCase();
-            const event = {
-              ...row,
-              time,
-              actor,
-              eventType: 'Neutral',
-              importance: 1
-            };
-            event.eventType = classifyEvent(event);
-            event.importance = scoreImportance(event);
-            return event;
-          })
-          .filter(Boolean);
-
-        state.events = events;
-        state.participants = participants;
-        state.actors = Array.from(new Set(events.map(e => e.actor))).sort();
-        if (!state.brushRange || force) state.brushRange = null;
-        if (state.pinnedEvent && !state.events.find(e => e.message_id === state.pinnedEvent.message_id)) {
-          state.pinnedEvent = null;
-        }
-
-        const eventsById = new Map(events.map(e => [e.message_id, e]));
-        state.causalLinks = computeCausalLinks(eventsById, events);
-
-        renderLegend();
-        renderAll();
-        setStatus(`Loaded ${events.length} communications, ${participants.length} participant rows`);
-      } catch (err) {
-        console.error(err);
-        document.getElementById('message-warning').innerHTML =
-          `<div class="warning">Could not load VAST1Data from PostgreSQL. Ensure local_anthropic_proxy.py is running on 127.0.0.1:8787 and DB access is configured. Error: ${escapeHtml(String(err.message || err))}</div>`;
-        setStatus('Load failed');
-      }
-    }
-
-    window.addEventListener('resize', () => {
-      if (state.events.length) {
-        renderAll();
-      }
+  const sim = d3.forceSimulation(nodes)
+    .force('link',      d3.forceLink(links).id(d => d.id).distance(l => 95 - Math.min(40, l.count)))
+    .force('charge',    d3.forceManyBody().strength(-250))
+    .force('center',    d3.forceCenter(W/2, H/2))
+    .force('collision', d3.forceCollide().radius(d => rScale(deg.get(d.id) || 1) + 7))
+    .on('tick', () => {
+      linkEls
+        .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+        .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+      nodeEls.attr('transform', d => `translate(${d.x},${d.y})`);
     });
 
-    init(false);
-  </script>
+  S.sim = sim;
+}
+
+// ═══════════════════════════════
+// LEGEND
+// ═══════════════════════════════
+function renderLegend() {
+  document.getElementById('tl-legend').innerHTML =
+    Object.entries(ECOL).map(([n, c]) =>
+      `<span class="legend-item"><span class="swatch" style="background:${c}"></span>${n}</span>`
+    ).join('');
+}
+
+// ═══════════════════════════════
+// CAUSAL CHAIN
+// ═══════════════════════════════
+function renderCausalChain() {
+  const svg     = d3.select('#sv-chain');
+  svg.selectAll('*').remove();
+  const storyEl = document.getElementById('chain-story');
+  storyEl.innerHTML = '';
+
+  const threshEl = document.getElementById('chain-threshold');
+  const threshold = parseInt(threshEl.value, 10);
+  document.getElementById('chain-threshold-val').textContent = threshold;
+
+  const f = filtered();
+  const important = f
+    .filter(e => e.importance >= threshold)
+    .sort((a, b) => a.time - b.time);
+
+  const cbEl = document.getElementById('cb-chain');
+  const W    = Math.max(cbEl.clientWidth - 16, 400);
+
+  if (important.length < 2) {
+    svg.attr('width', W).attr('height', 60);
+    svg.append('text').attr('x', W/2).attr('y', 38)
+      .attr('text-anchor','middle').attr('fill','#888').attr('font-size',12)
+      .text('No events at this threshold — lower the slider or expand the brush window.');
+    return;
+  }
+
+  // Group events by minute bucket so simultaneous events share a Y row
+  const minKey = e => Math.floor(+e.time / 60000);
+  const buckets = Array.from(
+    d3.rollups(important, v => v, e => minKey(e)).sort((a, b) => a[0] - b[0]),
+    ([, evs]) => evs
+  );
+
+  const ROW_H  = 64;
+  const NODE_W = 148;
+  const NODE_H = 40;
+  const HDR_H  = 36;
+  const H      = HDR_H + buckets.length * ROW_H + 20;
+
+  svg.attr('width', W).attr('height', H);
+
+  const actors = S.actors;
+  const colW   = (W - 16) / actors.length;
+  const actorX = a => 8 + actors.indexOf(a) * colW + colW / 2;
+
+  // Position map
+  const posMap = new Map();
+  buckets.forEach((evs, bi) => {
+    const y = HDR_H + bi * ROW_H + ROW_H / 2;
+    evs.forEach(e => posMap.set(e.message_id, { x: actorX(e.actor), y }));
+  });
+
+  // ── SVG defs ──
+  const defs = svg.append('defs');
+  [['arr-crit','#bd3f2f'],['arr-warn','#e76f51'],['arr-dim','rgba(120,130,140,.5)']].forEach(([id, fill]) => {
+    defs.append('marker').attr('id', id)
+      .attr('viewBox','0 -4 8 8').attr('refX', 16).attr('refY', 0)
+      .attr('markerWidth', 5).attr('markerHeight', 5).attr('orient','auto')
+      .append('path').attr('d','M0,-4L8,0L0,4').attr('fill', fill);
+  });
+  const glow = defs.append('filter').attr('id','chain-glow')
+    .attr('x','-40%').attr('y','-40%').attr('width','180%').attr('height','180%');
+  glow.append('feGaussianBlur').attr('stdDeviation','2.5').attr('result','blur');
+  const fm = glow.append('feMerge');
+  fm.append('feMergeNode').attr('in','blur');
+  fm.append('feMergeNode').attr('in','SourceGraphic');
+
+  // ── Column headers & lane guides ──
+  actors.forEach(actor => {
+    const x   = actorX(actor);
+    const col = S.acol[actor] || '#888';
+    svg.append('rect')
+      .attr('x', x - colW/2 + 3).attr('y', 1)
+      .attr('width', colW - 6).attr('height', HDR_H - 4)
+      .attr('rx', 5).attr('fill', col + '22').attr('stroke', col + '55').attr('stroke-width', 1);
+    svg.append('text').attr('x', x).attr('y', HDR_H - 9)
+      .attr('text-anchor','middle').attr('font-size', 9)
+      .attr('font-family','var(--mono)').attr('font-weight', 600).attr('fill', col)
+      .text(actor.replace('_agent',''));
+    svg.append('line')
+      .attr('x1', x).attr('y1', HDR_H).attr('x2', x).attr('y2', H - 6)
+      .attr('stroke', col + '28').attr('stroke-width', 1).attr('stroke-dasharray','4 4');
+  });
+
+  // ── Build causal edges ──
+  const byId   = new Map(S.events.map(e => [e.message_id, e]));
+  const impSet = new Set(important.map(e => e.message_id));
+  const edges  = [];
+
+  for (const e of important) {
+    if (!e.responding_to) continue;
+    const parent = byId.get(e.responding_to);
+    if (parent && impSet.has(parent.message_id)) {
+      edges.push({ src: parent, tgt: e, type: 'reply' });
+    }
+  }
+
+  const releases = important.filter(e => e.eventType === 'Release');
+  const enablers = important.filter(e => ['Decision','Compliance'].includes(e.eventType));
+
+  for (const rel of releases) {
+    const prior = enablers
+      .filter(d => d.time <= rel.time && (rel.time - d.time) <= 2*3600*1000)
+      .sort((a, b) => b.time - a.time)
+      .slice(0, 2);
+    for (const d of prior) {
+      if (!edges.some(ex => ex.src.message_id === d.message_id && ex.tgt.message_id === rel.message_id)) {
+        edges.push({ src: d, tgt: rel, type: 'enables' });
+      }
+    }
+  }
+
+  // ── Critical path (BFS backward from each Release) ──
+  const inMap     = new Map();
+  for (const e of edges) {
+    if (!inMap.has(e.tgt.message_id)) inMap.set(e.tgt.message_id, []);
+    inMap.get(e.tgt.message_id).push(e);
+  }
+
+  const critNodes = new Set();
+  const critEdges = new Set();
+  for (const rel of releases) {
+    critNodes.add(rel.message_id);
+    const queue = [rel.message_id];
+    const seen  = new Set();
+    while (queue.length) {
+      const curr = queue.shift();
+      if (seen.has(curr)) continue;
+      seen.add(curr);
+      for (const edge of (inMap.get(curr) || [])) {
+        critEdges.add(`${edge.src.message_id}|${edge.tgt.message_id}`);
+        critNodes.add(edge.src.message_id);
+        queue.push(edge.src.message_id);
+      }
+    }
+  }
+
+  // ── Draw edges ──
+  for (const edge of edges) {
+    const sp = posMap.get(edge.src.message_id);
+    const tp = posMap.get(edge.tgt.message_id);
+    if (!sp || !tp) continue;
+
+    const isCrit  = critEdges.has(`${edge.src.message_id}|${edge.tgt.message_id}`);
+    const sameCol = Math.abs(sp.x - tp.x) < 5;
+    const sy = sp.y + NODE_H/2;
+    const ty = tp.y - NODE_H/2;
+
+    let path;
+    if (sameCol) {
+      const off = 52;
+      path = `M${sp.x},${sy}C${sp.x+off},${sy+18} ${tp.x+off},${ty-18} ${tp.x},${ty}`;
+    } else {
+      path = `M${sp.x},${sy}Q${(sp.x+tp.x)/2},${(sy+ty)/2} ${tp.x},${ty}`;
+    }
+
+    const markerId = isCrit ? (edge.type === 'enables' ? 'arr-crit' : 'arr-warn') : 'arr-dim';
+    svg.append('path')
+      .attr('d', path).attr('fill','none')
+      .attr('stroke', isCrit
+        ? (edge.type === 'enables' ? '#bd3f2f' : '#e76f51')
+        : (edge.type === 'reply'   ? '#8a9aaa' : '#c0854a'))
+      .attr('stroke-width', isCrit ? 2.5 : 1.1)
+      .attr('stroke-dasharray', !isCrit && edge.type === 'reply' ? '4 3' : 'none')
+      .attr('opacity', isCrit ? 0.9 : 0.36)
+      .attr('marker-end', `url(#${markerId})`);
+  }
+
+  // ── Draw event nodes ──
+  for (const e of important) {
+    const pos  = posMap.get(e.message_id);
+    if (!pos) continue;
+
+    const isCrit = critNodes.has(e.message_id);
+    const col    = ECOL[e.eventType] || '#aaa';
+    const hw     = NODE_W / 2;
+    const hh     = NODE_H / 2;
+
+    const g = svg.append('g')
+      .attr('transform', `translate(${pos.x},${pos.y})`)
+      .style('cursor','pointer')
+      .on('mousemove', ev => showTip(ev,
+        `<b>${e.eventType}</b> · ${e.actor}<br>${fmtT(e.time)}<br><i>${esc((e.content||'').slice(0,220))}</i>`))
+      .on('mouseout', hideTip)
+      .on('click', () => { S.pinned = e; renderMessages(); renderTimeline(); });
+
+    g.append('rect')
+      .attr('x', -hw).attr('y', -hh)
+      .attr('width', NODE_W).attr('height', NODE_H)
+      .attr('rx', 7)
+      .attr('fill',         isCrit ? col + '28' : col + '10')
+      .attr('stroke',       col)
+      .attr('stroke-width', isCrit ? 2 : 0.7)
+      .attr('filter',       isCrit ? 'url(#chain-glow)' : 'none');
+
+    g.append('text')
+      .attr('x', -hw + 5).attr('y', -hh + 13)
+      .attr('font-size', 8).attr('font-weight', 700)
+      .attr('font-family','var(--mono)').attr('fill', col)
+      .text(e.eventType.slice(0,7).toUpperCase());
+
+    g.append('text')
+      .attr('x', hw - 4).attr('y', -hh + 13)
+      .attr('font-size', 8).attr('text-anchor','end')
+      .attr('font-family','var(--mono)').attr('fill','#6a7268')
+      .text(d3.timeFormat('%H:%M')(e.time));
+
+    const excerpt = (e.content || '').replace(/\s+/g,' ').slice(0, 30);
+    g.append('text')
+      .attr('x', -hw + 5).attr('y', hh - 8)
+      .attr('font-size', 8.5)
+      .attr('fill', isCrit ? '#1a2026' : '#4a5050')
+      .text(excerpt + ((e.content||'').length > 30 ? '…' : ''));
+  }
+
+  // ── Story narrative ──
+  buildCausalStory(releases, important, edges, critNodes, inMap, storyEl);
+}
+
+function buildCausalStory(releases, important, edges, critNodes, inMap, storyEl) {
+  const byId = new Map(important.map(e => [e.message_id, e]));
+
+  if (!releases.length) {
+    storyEl.innerHTML = '<p style="font-size:.75rem;color:var(--muted)">No Release events in current window. Expand the brush or lower the importance threshold.</p>';
+    return;
+  }
+
+  const compliance = important.filter(e => e.eventType === 'Compliance');
+  const risks      = important.filter(e => e.eventType === 'RiskSignal');
+
+  let html = '<h3>Causal path narrative</h3>';
+
+  for (const rel of releases) {
+    // Reconstruct causal chain backward from this release
+    const chain = [];
+    const queue = [rel.message_id];
+    const seen  = new Set();
+    while (queue.length) {
+      const curr = queue.shift();
+      if (seen.has(curr)) continue;
+      seen.add(curr);
+      const ev = byId.get(curr);
+      if (ev) chain.push(ev);
+      for (const edge of (inMap.get(curr) || [])) queue.push(edge.src.message_id);
+    }
+    chain.sort((a, b) => a.time - b.time);
+
+    const hasCompliance = compliance.some(c =>
+      c.time <= rel.time && (rel.time - c.time) <= 2*3600*1000
+    );
+    const priorRisks = risks.filter(r =>
+      r.time < rel.time && (rel.time - r.time) <= 4*3600*1000
+    );
+
+    html += `<div style="margin-bottom:12px;padding:8px 12px;background:#bd3f2f0d;border-left:4px solid #bd3f2f;border-radius:0 6px 6px 0;">`;
+    html += `<div style="font-size:.79rem;font-weight:700;margin-bottom:6px;color:#bd3f2f;">`;
+    html += `RELEASE — ${esc(rel.actor)} · ${fmtT(rel.time)}</div>`;
+
+    if (!hasCompliance && priorRisks.length) {
+      html += `<div style="font-size:.73rem;color:#c45c2f;background:#f4a26118;border:1px solid #f4a26144;border-radius:5px;padding:4px 8px;margin-bottom:7px;">`;
+      html += `⚠ ${priorRisks.length} risk signal(s) raised in the prior 4h with no compliance checkpoint before release.</div>`;
+    } else if (!hasCompliance) {
+      html += `<div style="font-size:.73rem;color:var(--muted);margin-bottom:7px;">No compliance checkpoint found in the 2h window preceding this release.</div>`;
+    }
+
+    if (chain.length) {
+      html += `<div style="display:flex;flex-direction:column;gap:4px;">`;
+      for (const ev of chain.slice(-9)) {
+        const ecol    = ECOL[ev.eventType] || '#aaa';
+        const excerpt = esc((ev.content || '').replace(/\s+/g,' ').slice(0, 120));
+        html += `<div style="display:flex;gap:8px;align-items:baseline;font-size:.74rem;line-height:1.4;">
+          <span style="font-size:.65rem;font-weight:700;font-family:var(--mono);color:${ecol};min-width:72px;white-space:nowrap">${ev.eventType.toUpperCase()}</span>
+          <span style="font-family:var(--mono);font-size:.65rem;color:var(--muted);white-space:nowrap">${esc(ev.actor)} · ${fmtT(ev.time)}</span>
+          <span style="color:var(--text)">${excerpt}${ev.content && ev.content.length > 120 ? '…' : ''}</span>
+        </div>`;
+      }
+      html += `</div>`;
+    }
+    html += `</div>`;
+  }
+
+  storyEl.innerHTML = html;
+}
+
+// ═══════════════════════════════
+// INIT
+// ═══════════════════════════════
+async function init(force = false) {
+  setStatus(force ? 'Reloading…' : 'Loading from PostgreSQL…');
+  document.getElementById('msg-err').innerHTML = '';
+
+  try {
+    const rows = await dbQuery(`
+      SELECT round_id, message_index, message_id, agent_id, agent_role, agent_label,
+             channel, recipients, message_type, responding_to, content, timestamp
+      FROM mc1.communications
+      WHERE timestamp IS NOT NULL
+      ORDER BY timestamp::timestamp, round_id, message_index
+    `);
+
+    const events = rows.map(r => {
+      const t = new Date(r.timestamp);
+      if (Number.isNaN(+t)) return null;
+      const actor = String(r.agent_role || r.agent_id || 'unknown').toLowerCase();
+      const e = { ...r, time: t, actor, eventType: 'Neutral', importance: 1 };
+      e.eventType = classify(e);
+      e.importance = score(e);
+      return e;
+    }).filter(Boolean);
+
+    S.events = events;
+    S.actors = Array.from(new Set(events.map(e => e.actor))).sort();
+    S.acol   = Object.fromEntries(S.actors.map((a, i) => [a, APAL[i % APAL.length]]));
+    if (force) { S.brush = null; S.pinned = null; S.zoomState = null; }
+
+    renderLegend();
+    renderAll();
+    setStatus(`✓ ${events.length} messages · ${S.actors.length} agents`);
+  } catch (err) {
+    console.error(err);
+    document.getElementById('msg-err').innerHTML =
+      `<div class="msg-err">Could not load data. Is local_anthropic_proxy.py running on port 8787?<br>${esc(String(err.message || err))}</div>`;
+    setStatus('Error loading data');
+  }
+}
+
+// ═══════════════════════════════
+// BUTTON HANDLERS
+// ═══════════════════════════════
+document.getElementById('btn-reload').addEventListener('click', () => init(true));
+
+document.getElementById('btn-clear-pin').addEventListener('click', () => {
+  S.pinned = null;
+  document.getElementById('msg-notice').style.display = 'none';
+  renderMessages();
+  renderTimeline();
+});
+
+document.getElementById('btn-focus-release').addEventListener('click', () => {
+  const rel = S.events.filter(e => e.eventType === 'Release');
+  if (!rel.length) return;
+  const t0 = d3.min(rel, d => d.time);
+  const t1 = d3.max(rel, d => d.time);
+  S.brush  = [new Date(+t0 - 90*60*1000), new Date(+t1 + 45*60*1000)];
+  S.pinned = null;
+  renderAll();
+});
+
+document.getElementById('btn-reset-brush').addEventListener('click', () => {
+  S.brush  = null;
+  S.pinned = null;
+  document.getElementById('msg-notice').style.display = 'none';
+  renderAll();
+});
+
+// Importance threshold — tl-threshold (swimlane toolbar) and chain-threshold (section 3) stay in sync
+document.getElementById('tl-threshold').addEventListener('input', function() {
+  const v = this.value;
+  document.getElementById('tl-threshold-val').textContent = v;
+  document.getElementById('chain-threshold').value = v;
+  document.getElementById('chain-threshold-val').textContent = v;
+  renderTimeline();
+  renderCausalChain();
+});
+document.getElementById('chain-threshold').addEventListener('input', function() {
+  const v = this.value;
+  document.getElementById('chain-threshold-val').textContent = v;
+  document.getElementById('tl-threshold').value = v;
+  document.getElementById('tl-threshold-val').textContent = v;
+  renderTimeline();
+  renderCausalChain();
+});
+
+document.getElementById('btn-reset-zoom').addEventListener('click', () => {
+  S.zoomState = null;
+  document.getElementById('tl-zoom-level').textContent = '1×';
+  if (S.zoomBehavior) d3.select('#tl-svg').call(S.zoomBehavior.transform, d3.zoomIdentity);
+  else renderTimeline();
+});
+
+let resizeTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => { if (S.events.length) renderAll(); }, 160);
+});
+
+init(false);
+</script>
 </body>
 </html>
