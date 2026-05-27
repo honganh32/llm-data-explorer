@@ -80,6 +80,23 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text); min-
 .cbody { flex: 1; padding: 6px; min-height: 256px; }
 .cbody svg { display: block; }
 
+/* ── Causal Chain ── */
+.chain-ctrls { padding: 6px 13px; border-bottom: 1px solid var(--border); display: flex; gap: 12px; align-items: center; font-size: .74rem; color: var(--muted); background: var(--panel2); flex-shrink: 0; flex-wrap: wrap; }
+.chain-ctrls label { display: flex; align-items: center; gap: 6px; }
+.chain-ctrls input[type=range] { width: 80px; vertical-align: middle; accent-color: var(--accent); }
+.chain-body { overflow-x: auto; overflow-y: auto; max-height: 540px; }
+.chain-story { padding: 10px 16px; border-top: 1px solid var(--border); background: rgba(244,162,97,.06); font-size: .76rem; line-height: 1.55; color: var(--text); flex-shrink: 0; }
+.chain-story h3 { font-size: .8rem; font-weight: 700; margin-bottom: 8px; color: var(--text); }
+
+/* ── Timeline toolbar ── */
+.tl-ctrls { padding: 5px 13px; border-bottom: 1px solid var(--border); display: flex; gap: 12px; align-items: center; font-size: .74rem; color: var(--muted); background: var(--panel2); flex-shrink: 0; flex-wrap: wrap; }
+.tl-ctrls label { display: flex; align-items: center; gap: 6px; }
+.tl-ctrls input[type=range] { width: 80px; vertical-align: middle; accent-color: var(--accent); }
+
+/* ── Expand button ── */
+.expand-btn { margin-top: 4px; display: inline-block; background: none; border: none; font-size: .65rem; color: var(--accent); cursor: pointer; padding: 0; font-family: var(--mono); letter-spacing: .03em; }
+.expand-btn:hover { text-decoration: underline; }
+
 /* ── Tooltip ── */
 #tip { position: fixed; pointer-events: none; z-index: 9999; background: #1c222a; color: #e5dfd6; border: 1px solid rgba(255,255,255,.13); border-radius: 8px; padding: 7px 10px; font-size: .71rem; font-family: var(--mono); line-height: 1.5; max-width: 300px; opacity: 0; transition: opacity .1s; }
 
@@ -113,8 +130,17 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text); min-
   <section class="main-row">
     <div class="panel">
       <div class="ph">
-        <h2>1. Interactive Timeline</h2>
-        <span class="hint">drag lower brush · hover · click to pin event</span>
+        <h2>1. Causal Chain Swimlane</h2>
+        <span class="hint">drag window · all events as dots · important events with causal edges · red = critical path</span>
+      </div>
+      <div class="tl-ctrls">
+        <label>Importance ≥
+          <input type="range" id="tl-threshold" min="2" max="8" value="3">
+          <span id="tl-threshold-val" style="font-family:var(--mono);font-weight:600;color:var(--text)">3</span>
+        </label>
+        <button class="btn" id="btn-reset-zoom" style="padding:2px 9px;font-size:.71rem">Reset zoom</button>
+        <span id="tl-zoom-level" style="font-family:var(--mono);font-size:.69rem;color:var(--accent);min-width:28px">1×</span>
+        <span style="font-size:.69rem;color:var(--muted)">scroll to zoom · drag window to filter</span>
       </div>
       <div id="tl-wrap">
         <div class="legend" id="tl-legend"></div>
@@ -145,6 +171,25 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text); min-
     <div class="panel cpanel">
       <div class="ph"><h2>2.3 Agent Network</h2><span class="hint">agent-to-agent communication flow</span></div>
       <div class="cbody" id="cb-net"><svg id="sv-net"></svg></div>
+    </div>
+  </section>
+
+  <!-- Row 3: Causal Chain -->
+  <section style="display:grid;grid-template-columns:1fr;gap:10px;">
+    <div class="panel" style="display:flex;flex-direction:column;">
+      <div class="ph">
+        <h2>3. Causal Chain — Path to Data Leak</h2>
+        <span class="hint">reply chains + decision→release edges · critical path highlighted in red · click node to pin</span>
+      </div>
+      <div class="chain-ctrls">
+        <label>Min importance:
+          <input type="range" id="chain-threshold" min="2" max="8" value="3">
+          <span id="chain-threshold-val" style="font-family:var(--mono);font-weight:600;color:var(--text)">3</span>
+        </label>
+        <span>— lower = more events &nbsp;|&nbsp; <span style="color:#bd3f2f;font-weight:700">red edges</span> = critical path &nbsp;|&nbsp; <span style="color:#e76f51;font-weight:700">orange edges</span> = reply chain on path &nbsp;|&nbsp; dashed = off-path reply</span>
+      </div>
+      <div class="chain-body" id="cb-chain"><svg id="sv-chain"></svg></div>
+      <div class="chain-story" id="chain-story"></div>
     </div>
   </section>
 
@@ -187,12 +232,14 @@ const APAL = [
 // STATE
 // ═══════════════════════════════
 const S = {
-  events: [],
-  actors: [],
-  acol:   {},
-  brush:  null,
-  pinned: null,
-  sim:    null
+  events:       [],
+  actors:       [],
+  acol:         {},
+  brush:        null,
+  pinned:       null,
+  sim:          null,
+  zoomState:    null,
+  zoomBehavior: null
 };
 
 // ═══════════════════════════════
@@ -244,9 +291,17 @@ async function dbQuery(sql) {
     body: JSON.stringify({ database: DATABASE, sql })
   });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
-  const j = await r.json();
-  if (j.error) throw new Error(j.error);
-  return j.rows || [];
+  const text = await r.text();
+  const rows = [];
+  for (const line of text.split('\n')) {
+    const t = line.trim();
+    if (!t) continue;
+    const obj = JSON.parse(t);
+    if (obj._error) throw new Error(obj._error);
+    if (obj._end) break;
+    rows.push(obj);
+  }
+  return rows;
 }
 
 function classify(e) {
@@ -307,6 +362,7 @@ function renderAll(tl = true) {
   renderSunburst();
   renderCloud();
   renderNetwork();
+  renderCausalChain();
 }
 
 // ═══════════════════════════════
@@ -331,165 +387,260 @@ function renderMetrics() {
 // TIMELINE
 // ═══════════════════════════════
 function renderTimeline() {
+  const svg  = d3.select('#tl-svg');
+  svg.selectAll('*').remove();
   const wrap = document.getElementById('tl-wrap');
   const W    = Math.max(wrap.clientWidth - 20, 400);
-  const H    = Math.max(440, Math.min(580, window.innerHeight * 0.5));
-  const svg  = d3.select('#tl-svg').attr('width', W).attr('height', H);
-  svg.selectAll('*').remove();
 
   if (!S.events.length) {
+    const H = 240;
+    svg.attr('width', W).attr('height', H);
     svg.append('text').attr('x', W/2).attr('y', H/2)
       .attr('text-anchor','middle').attr('fill','#888').attr('font-size',13).text('No data loaded');
     return;
   }
 
-  const mg      = { top: 16, right: 16, bottom: 90, left: 122 };
-  const lineH   = 66;
-  const laneTop = mg.top + lineH + 14;
-  const laneH   = H - mg.bottom - laneTop;
+  const mg    = { top: 10, right: 16, bottom: 38, left: 122 };
+  const ROW_H = 52;
+  const H     = mg.top + S.actors.length * ROW_H + mg.bottom;
+  svg.attr('width', W).attr('height', H);
 
-  const actors = S.actors;
-  const fev    = filtered();
-  const domain = S.brush || d3.extent(S.events, d => d.time);
+  // Base (unzoomed) x scale — full domain always
+  const fullDomain = d3.extent(S.events, d => d.time);
+  const xBase = d3.scaleTime().domain(fullDomain).range([mg.left, W - mg.right]);
+  const y     = d3.scaleBand().domain(S.actors)
+    .range([mg.top, mg.top + S.actors.length * ROW_H]).paddingInner(.15);
 
-  const x = d3.scaleTime().domain(domain).range([mg.left, W - mg.right]);
-  const y = d3.scaleBand().domain(actors).range([laneTop, laneTop + laneH]).paddingInner(.2);
+  // Current x scale (applies stored zoom if any)
+  const xC = () => S.zoomState ? S.zoomState.rescaleX(xBase) : xBase;
 
-  // ── hourly signal line charts ──
-  const TYPES = ['Release','Decision','Compliance','RiskSignal'];
-  const binned = d3.rollups(
-    fev,
-    v => {
-      const c = Object.fromEntries(TYPES.map(t => [t, 0]));
-      v.forEach(d => { if (c[d.eventType] !== undefined) c[d.eventType]++; });
-      return c;
-    },
-    d => +d3.timeHour.floor(d.time)
-  ).sort((a, b) => a[0] - b[0]);
-
-  const maxCnt = d3.max(binned, d => d3.max(TYPES, t => d[1][t])) || 1;
-  const yL     = d3.scaleLinear().domain([0, maxCnt]).range([laneTop - 6, mg.top + 8]);
-  const lineG  = d3.line().x(d => x(new Date(d[0]))).y(d => yL(d[1])).curve(d3.curveMonotoneX);
-
-  TYPES.forEach(type => {
-    const pts = binned.map(([k, v]) => [k, v[type] || 0]);
-    if (pts.length < 2) return;
-    svg.append('path').datum(pts)
-      .attr('fill','none').attr('stroke', ECOL[type]).attr('stroke-width', 1.8).attr('opacity', .85)
-      .attr('d', lineG);
+  // ── SVG defs ──
+  const defs = svg.append('defs');
+  defs.append('clipPath').attr('id','sw-clip')
+    .append('rect').attr('x', mg.left).attr('y', mg.top - 4)
+    .attr('width', W - mg.left - mg.right).attr('height', S.actors.length * ROW_H + 8);
+  [['sw-arr-crit','#bd3f2f'], ['sw-arr-warn','#f4a261'], ['sw-arr-dim','#aaa']].forEach(([id, col]) => {
+    defs.append('marker').attr('id', id)
+      .attr('markerWidth', 5).attr('markerHeight', 5)
+      .attr('refX', 4.5).attr('refY', 2.5).attr('orient','auto')
+      .append('path').attr('d','M0,0 L5,2.5 L0,5 Z').attr('fill', col);
   });
+  const filt = defs.append('filter').attr('id','sw-glow')
+    .attr('x','-50%').attr('y','-50%').attr('width','200%').attr('height','200%');
+  filt.append('feGaussianBlur').attr('stdDeviation', 2.5).attr('result','blur');
+  const fm = filt.append('feMerge');
+  fm.append('feMergeNode').attr('in','blur');
+  fm.append('feMergeNode').attr('in','SourceGraphic');
 
-  svg.append('text').attr('x', mg.left).attr('y', mg.top)
-    .attr('font-size', 10).attr('fill','#6a7268').text('hourly signal intensity');
+  // ── Alternating lane backgrounds (static, outside clip) ──
+  svg.append('g').selectAll('rect').data(S.actors).join('rect')
+    .attr('x', mg.left).attr('width', W - mg.left - mg.right)
+    .attr('y', d => y(d)).attr('height', y.bandwidth())
+    .attr('fill', (_, i) => i % 2 === 0 ? 'rgba(0,0,0,0.03)' : 'rgba(0,0,0,0.00)');
 
-  // ── lane grid ──
-  svg.append('g').selectAll('line').data(actors).join('line')
-    .attr('x1', mg.left).attr('x2', W - mg.right)
-    .attr('y1', d => y(d) + y.bandwidth()/2).attr('y2', d => y(d) + y.bandwidth()/2)
-    .attr('stroke','rgba(30,40,28,0.11)').attr('stroke-width', 1);
+  // ── Causal structure ──
+  const threshold = parseInt(document.getElementById('chain-threshold').value, 10);
+  const important = S.events.filter(e => e.importance >= threshold);
+  const bgEvents  = S.events.filter(e => e.importance < threshold);
+  const byId      = new Map(S.events.map(e => [e.message_id, e]));
 
-  // ── reply arcs ──
-  const byId = new Map(S.events.map(e => [e.message_id, e]));
-  const arcs = fev
-    .filter(e => e.responding_to && byId.has(e.responding_to))
-    .map(e => ({ src: byId.get(e.responding_to), tgt: e }))
-    .filter(l => l.src.time >= domain[0] && l.tgt.time <= domain[1])
-    .slice(0, 60);
+  const edges = [];
+  important.forEach(tgt => {
+    if (tgt.responding_to && byId.has(tgt.responding_to)) {
+      const src = byId.get(tgt.responding_to);
+      if (src.importance >= threshold) edges.push({ src, tgt, type: 'reply' });
+    }
+  });
+  const releases = important.filter(e => e.eventType === 'Release');
+  const enablers = important.filter(e => e.eventType === 'Decision' || e.eventType === 'Compliance');
+  releases.forEach(rel => {
+    enablers.forEach(en => {
+      if (en.time <= rel.time && (rel.time - en.time) <= 2 * 3600 * 1000)
+        edges.push({ src: en, tgt: rel, type: 'enables' });
+    });
+  });
+  const inMap = new Map();
+  edges.forEach(({ src, tgt }) => {
+    if (!inMap.has(tgt.message_id)) inMap.set(tgt.message_id, []);
+    inMap.get(tgt.message_id).push(src);
+  });
+  const critNodes = new Set(releases.map(e => e.message_id));
+  const bfsQ = [...critNodes];
+  while (bfsQ.length) {
+    const cur = bfsQ.shift();
+    (inMap.get(cur) || []).forEach(p => {
+      if (!critNodes.has(p.message_id)) { critNodes.add(p.message_id); bfsQ.push(p.message_id); }
+    });
+  }
 
-  svg.append('g').attr('opacity', .3).selectAll('path').data(arcs).join('path')
-    .attr('fill','none').attr('stroke','#6a8aae').attr('stroke-width', 1)
-    .attr('stroke-dasharray','3 3')
-    .attr('d', l => {
-      const sx = x(l.src.time), sy = y(l.src.actor) + y.bandwidth()/2;
-      const tx = x(l.tgt.time), ty = y(l.tgt.actor) + y.bandwidth()/2;
-      return `M${sx},${sy}Q${(sx+tx)/2},${Math.min(sy,ty)-18} ${tx},${ty}`;
+  // ── Content group (clipped, zoomed) ──
+  const cg = svg.append('g').attr('clip-path','url(#sw-clip)');
+  const x0 = xC();  // initial positions
+
+  // Background dots
+  cg.append('g').selectAll('circle').data(bgEvents).join('circle')
+    .attr('class','bg')
+    .attr('cx', d => x0(d.time))
+    .attr('cy', d => (y(d.actor) || 0) + y.bandwidth()/2)
+    .attr('r', 2).attr('fill', d => ECOL[d.eventType] || ECOL.Neutral).attr('opacity', 0.18)
+    .style('pointer-events','none');
+
+  // Causal edges (bound to data for zoom updates)
+  cg.append('g').selectAll('path').data(edges).join('path')
+    .attr('class','cedge')
+    .attr('fill','none')
+    .attr('stroke', d => {
+      const crit = critNodes.has(d.src.message_id) && critNodes.has(d.tgt.message_id);
+      return crit ? '#bd3f2f' : d.type === 'reply' ? '#6a8aae' : '#f4a261';
+    })
+    .attr('stroke-width', d => (critNodes.has(d.src.message_id) && critNodes.has(d.tgt.message_id)) ? 1.6 : 1)
+    .attr('opacity', d => (critNodes.has(d.src.message_id) && critNodes.has(d.tgt.message_id)) ? 0.7 : 0.3)
+    .attr('marker-end', d => {
+      const crit = critNodes.has(d.src.message_id) && critNodes.has(d.tgt.message_id);
+      return `url(#${crit ? 'sw-arr-crit' : d.type === 'reply' ? 'sw-arr-dim' : 'sw-arr-warn'})`;
+    })
+    .attr('d', d => {
+      const sx = x0(d.src.time), sy = (y(d.src.actor)||0) + y.bandwidth()/2;
+      const tx = x0(d.tgt.time), ty = (y(d.tgt.actor)||0) + y.bandwidth()/2;
+      return `M${sx},${sy}Q${(sx+tx)/2},${(sy+ty)/2-18} ${tx},${ty}`;
     });
 
-  // ── event nodes ──
-  function pinEvent(_, d) { S.pinned = d; renderAll(); }
-
-  svg.append('g').selectAll('circle')
-    .data(fev.filter(d => d.eventType !== 'Decision')).join('circle')
-    .attr('cx', d => x(d.time))
-    .attr('cy', d => y(d.actor) + y.bandwidth()/2)
-    .attr('r',  d => Math.min(8, 2.4 + d.importance * 0.4))
-    .attr('fill',         d => ECOL[d.eventType])
-    .attr('stroke',       d => S.pinned && S.pinned.message_id === d.message_id ? '#111' : '#fff')
-    .attr('stroke-width', d => S.pinned && S.pinned.message_id === d.message_id ? 2.5 : 0.7)
-    .attr('opacity', d => d.eventType === 'Neutral' ? 0.4 : 0.92)
+  // Important circles
+  cg.append('g').selectAll('circle').data(important.filter(d => d.eventType !== 'Decision')).join('circle')
+    .attr('class','imp')
+    .attr('cx', d => x0(d.time))
+    .attr('cy', d => (y(d.actor)||0) + y.bandwidth()/2)
+    .attr('r',  d => Math.min(10, 3.5 + d.importance * 0.55))
+    .attr('fill', d => ECOL[d.eventType])
+    .attr('stroke', d => critNodes.has(d.message_id) ? '#bd3f2f' : '#fff')
+    .attr('stroke-width', d => critNodes.has(d.message_id) ? 2.2 : 0.8)
+    .attr('filter', d => critNodes.has(d.message_id) ? 'url(#sw-glow)' : null)
     .style('cursor','pointer')
     .on('mousemove', (ev, d) =>
       showTip(ev, `<b>${d.eventType}</b> · ${d.actor}<br>${fmtT(d.time)}<br>${esc((d.content||'').slice(0,160))}…`))
     .on('mouseout', hideTip)
-    .on('click', pinEvent);
+    .on('click', (_, d) => { S.pinned = d; renderMessages(); });
 
-  svg.append('g').selectAll('path')
-    .data(fev.filter(d => d.eventType === 'Decision')).join('path')
-    .attr('transform', d => `translate(${x(d.time)},${y(d.actor) + y.bandwidth()/2})`)
-    .attr('d', d3.symbol().type(d3.symbolDiamond).size(64))
+  // Decision diamonds
+  const symD = d3.symbol().type(d3.symbolDiamond);
+  cg.append('g').selectAll('path').data(important.filter(d => d.eventType === 'Decision')).join('path')
+    .attr('class','imp-diamond')
+    .attr('transform', d => `translate(${x0(d.time)},${(y(d.actor)||0) + y.bandwidth()/2})`)
+    .attr('d', d => symD.size(Math.min(100, 32 + d.importance * 9))())
     .attr('fill', ECOL.Decision)
-    .attr('stroke',       d => S.pinned && S.pinned.message_id === d.message_id ? '#111' : '#fff')
-    .attr('stroke-width', d => S.pinned && S.pinned.message_id === d.message_id ? 2.5 : 0.7)
+    .attr('stroke', d => critNodes.has(d.message_id) ? '#bd3f2f' : '#fff')
+    .attr('stroke-width', d => critNodes.has(d.message_id) ? 2.2 : 0.8)
+    .attr('filter', d => critNodes.has(d.message_id) ? 'url(#sw-glow)' : null)
     .style('cursor','pointer')
     .on('mousemove', (ev, d) =>
       showTip(ev, `<b>Decision</b> · ${d.actor}<br>${fmtT(d.time)}<br>${esc((d.content||'').slice(0,160))}…`))
     .on('mouseout', hideTip)
-    .on('click', pinEvent);
+    .on('click', (_, d) => { S.pinned = d; renderMessages(); });
 
-  // ── axes ──
-  svg.append('g').attr('transform', `translate(0,${laneTop + laneH})`)
-    .call(d3.axisBottom(x).ticks(7).tickFormat(d3.timeFormat('%m-%d %H:%M')))
-    .selectAll('text')
-    .style('font-size','10px')
-    .attr('transform','rotate(-20)')
-    .style('text-anchor','end');
+  // ── Axes ──
+  const bottomAxisG = svg.append('g')
+    .attr('transform', `translate(0,${mg.top + S.actors.length * ROW_H})`)
+    .call(d3.axisBottom(x0).ticks(8).tickFormat(d3.timeFormat('%m-%d')));
+  bottomAxisG.selectAll('text').style('font-size','9.5px');
 
   svg.append('g').attr('transform', `translate(${mg.left - 5},0)`)
     .call(d3.axisLeft(y).tickSize(0))
-    .selectAll('text')
-    .style('font-size','10px')
-    .style('font-family','var(--mono)');
+    .selectAll('text').style('font-size','10px').style('font-family','var(--mono)');
 
-  // ── context brush strip ──
-  const ctxY  = H - 64;
-  const ctxH  = 26;
-  const xFull = d3.scaleTime()
-    .domain(d3.extent(S.events, d => d.time))
-    .range([mg.left, W - mg.right]);
-  const hrly  = d3.rollups(S.events, v => v.length, d => +d3.timeHour.floor(d.time))
-    .sort((a, b) => a[0] - b[0]);
-  const yCtx  = d3.scaleLinear()
-    .domain([0, d3.max(hrly, d => d[1]) || 1])
-    .range([ctxY + ctxH, ctxY]);
+  // ── Sliding window brush ──
+  const winLabel = svg.append('text')
+    .attr('y', H - 4).attr('text-anchor','middle')
+    .attr('font-size', 9.5).attr('fill','#006b69').attr('pointer-events','none');
 
-  svg.append('path').datum(hrly)
-    .attr('fill','rgba(0,107,105,.2)')
-    .attr('stroke','#006b69')
-    .attr('stroke-width', 1)
-    .attr('d', d3.area()
-      .x(d => xFull(new Date(d[0])))
-      .y0(ctxY + ctxH)
-      .y1(d => yCtx(d[1]))
-      .curve(d3.curveMonotoneX));
+  const bExtent = [[mg.left, mg.top], [W - mg.right, mg.top + S.actors.length * ROW_H]];
+  let tlZooming = false;
+  let brushG;
 
-  svg.append('text').attr('x', mg.left).attr('y', ctxY - 4)
-    .attr('font-size', 10).attr('fill','#6a7268').text('▼ drag to filter window');
-
-  const brush = d3.brushX()
-    .extent([[mg.left, ctxY], [W - mg.right, ctxY + ctxH]])
-    .on('brush end', ({ selection }) => {
-      if (!selection) {
-        S.brush = null;
-        renderAll();
-        return;
-      }
-      S.brush = [xFull.invert(selection[0]), xFull.invert(selection[1])];
+  const brush = d3.brushX().extent(bExtent)
+    .on('brush', ({ selection }) => {
+      if (!selection || tlZooming) return;
+      const xz = xC();
+      const [t0, t1] = selection.map(px => xz.invert(px));
+      S.brush = [t0, t1];
+      winLabel.attr('x', (selection[0]+selection[1])/2).text(`${fmtT(t0)}  —  ${fmtT(t1)}`);
+      renderMessages();
+    })
+    .on('end', ({ selection }) => {
+      if (tlZooming) return;
+      if (!selection) { S.brush = null; winLabel.text(''); renderAll(false); return; }
+      const xz = xC();
+      const [t0, t1] = selection.map(px => xz.invert(px));
+      S.brush = [t0, t1];
+      winLabel.attr('x', (selection[0]+selection[1])/2).text(`${fmtT(t0)}  —  ${fmtT(t1)}`);
       renderAll(false);
     });
 
-  const bl     = svg.append('g').call(brush);
-  const active = S.brush || d3.extent(S.events, d => d.time);
-  bl.call(brush.move, active.map(xFull));
+  brushG = svg.append('g').call(brush);
+  brushG.select('.selection')
+    .attr('fill','rgba(0,107,105,.10)').attr('stroke','#006b69').attr('stroke-width', 1.5);
+
+  // Restore or initialise brush position
+  const xInit = xC();
+  const initPx = S.brush ? S.brush.map(t => xInit(t)) : (() => {
+    const t0 = fullDomain[0];
+    const t1 = new Date(Math.min(+fullDomain[0] + 3 * 86400 * 1000, +fullDomain[1]));
+    S.brush = [t0, t1];
+    return [xInit(t0), xInit(t1)];
+  })();
+  brushG.call(brush.move, initPx);
+  if (S.brush) {
+    const px = S.brush.map(t => xInit(t));
+    winLabel.attr('x', (px[0]+px[1])/2).text(`${fmtT(S.brush[0])}  —  ${fmtT(S.brush[1])}`);
+  }
+
+  // ── Zoom (scroll-wheel only) ──
+  const zoomBehavior = d3.zoom()
+    .scaleExtent([1, 40])
+    .filter(e => e.type === 'wheel')
+    .on('zoom', ({ transform }) => {
+      tlZooming = true;
+      S.zoomState = transform;
+      const xz = transform.rescaleX(xBase);
+
+      // Update zoom level display
+      const lvlEl = document.getElementById('tl-zoom-level');
+      if (lvlEl) lvlEl.textContent = transform.k.toFixed(1) + '×';
+
+      // Live-update axis (more ticks when zoomed in)
+      const ticks = Math.min(14, Math.max(6, Math.floor(8 * Math.pow(transform.k, 0.5))));
+      const fmt   = transform.k > 3 ? d3.timeFormat('%m-%d %H:%M') : d3.timeFormat('%m-%d');
+      bottomAxisG.call(d3.axisBottom(xz).ticks(ticks).tickFormat(fmt));
+      bottomAxisG.selectAll('text').style('font-size','9.5px');
+
+      // Live-update data element positions
+      svg.selectAll('circle.bg').attr('cx', d => xz(d.time));
+      svg.selectAll('path.cedge').attr('d', d => {
+        const sx = xz(d.src.time), sy = (y(d.src.actor)||0) + y.bandwidth()/2;
+        const tx = xz(d.tgt.time), ty = (y(d.tgt.actor)||0) + y.bandwidth()/2;
+        return `M${sx},${sy}Q${(sx+tx)/2},${(sy+ty)/2-18} ${tx},${ty}`;
+      });
+      svg.selectAll('circle.imp').attr('cx', d => xz(d.time));
+      svg.selectAll('path.imp-diamond').attr('transform', d =>
+        `translate(${xz(d.time)},${(y(d.actor)||0) + y.bandwidth()/2})`);
+
+      // Update S.brush based on existing brush pixel selection in new coordinate space
+      const sel = d3.brushSelection(brushG.node());
+      if (sel) {
+        const [t0, t1] = sel.map(px => xz.invert(px));
+        S.brush = [t0, t1];
+        winLabel.attr('x', (sel[0]+sel[1])/2).text(`${fmtT(t0)}  —  ${fmtT(t1)}`);
+        renderMessages();
+      }
+      tlZooming = false;
+    });
+
+  S.zoomBehavior = zoomBehavior;
+  svg.call(zoomBehavior);
+  // Restore stored zoom transform (triggers the zoom handler, which sets positions)
+  if (S.zoomState) svg.call(zoomBehavior.transform, S.zoomState);
+  // Sync zoom level display on initial render
+  const lvlEl = document.getElementById('tl-zoom-level');
+  if (lvlEl) lvlEl.textContent = (S.zoomState ? S.zoomState.k : 1).toFixed(1) + '×';
 }
 
 // ═══════════════════════════════
@@ -514,7 +665,7 @@ function renderMessages() {
   } else {
     notice.style.display = 'none';
     const f = filtered();
-    rows = f.sort((a, b) => (b.importance - a.importance) || (a.time - b.time)).slice(0, 16);
+    rows = f.sort((a, b) => a.time - b.time).slice(0, 20);
     hintEl.textContent = `${f.length} events in window`;
   }
 
@@ -523,11 +674,12 @@ function renderMessages() {
     return;
   }
 
+  const PREVIEW = 280;
   for (const r of rows) {
     const col      = S.acol[r.actor] || '#666';
     const initials = r.actor.split('_').map(w => w[0] || '').slice(0, 2).join('').toUpperCase();
     const ecol     = ECOL[r.eventType] || ECOL.Neutral;
-    const body     = esc((r.content || '').slice(0, 380)) + ((r.content || '').length > 380 ? '…' : '');
+    const full     = r.content || '';
     const chan      = esc(r.channel || r.message_type || '');
 
     const div = document.createElement('div');
@@ -536,13 +688,33 @@ function renderMessages() {
       <div class="avatar" style="background:${col}">${initials}</div>
       <div class="bbody">
         <div class="bname">${esc(r.agent_label || r.actor)}</div>
-        <div class="bubble" style="background:${col}16;border-color:${col}44">${body}</div>
+        <div class="bubble" style="background:${col}16;border-color:${col}44"></div>
         <div class="bfoot">
           <span>${fmtT(r.time)}</span>
           ${chan ? `<span>${chan}</span>` : ''}
           <span class="etag" style="color:${ecol};border-color:${ecol};background:${ecol}1a">${r.eventType}</span>
         </div>
       </div>`;
+
+    const bubble = div.querySelector('.bubble');
+    if (full.length > PREVIEW) {
+      const textSpan = document.createElement('span');
+      textSpan.innerHTML = esc(full.slice(0, PREVIEW)) + '…';
+      bubble.appendChild(textSpan);
+      const btn = document.createElement('button');
+      btn.className = 'expand-btn';
+      btn.textContent = 'Show more ▾';
+      let expanded = false;
+      btn.addEventListener('click', () => {
+        expanded = !expanded;
+        textSpan.innerHTML = expanded ? esc(full) : esc(full.slice(0, PREVIEW)) + '…';
+        btn.textContent = expanded ? 'Show less ▴' : 'Show more ▾';
+      });
+      bubble.appendChild(btn);
+    } else {
+      bubble.innerHTML = esc(full);
+    }
+
     scroll.appendChild(div);
   }
 }
@@ -784,6 +956,293 @@ function renderLegend() {
 }
 
 // ═══════════════════════════════
+// CAUSAL CHAIN
+// ═══════════════════════════════
+function renderCausalChain() {
+  const svg     = d3.select('#sv-chain');
+  svg.selectAll('*').remove();
+  const storyEl = document.getElementById('chain-story');
+  storyEl.innerHTML = '';
+
+  const threshEl = document.getElementById('chain-threshold');
+  const threshold = parseInt(threshEl.value, 10);
+  document.getElementById('chain-threshold-val').textContent = threshold;
+
+  const f = filtered();
+  const important = f
+    .filter(e => e.importance >= threshold)
+    .sort((a, b) => a.time - b.time);
+
+  const cbEl = document.getElementById('cb-chain');
+  const W    = Math.max(cbEl.clientWidth - 16, 400);
+
+  if (important.length < 2) {
+    svg.attr('width', W).attr('height', 60);
+    svg.append('text').attr('x', W/2).attr('y', 38)
+      .attr('text-anchor','middle').attr('fill','#888').attr('font-size',12)
+      .text('No events at this threshold — lower the slider or expand the brush window.');
+    return;
+  }
+
+  // Group events by minute bucket so simultaneous events share a Y row
+  const minKey = e => Math.floor(+e.time / 60000);
+  const buckets = Array.from(
+    d3.rollups(important, v => v, e => minKey(e)).sort((a, b) => a[0] - b[0]),
+    ([, evs]) => evs
+  );
+
+  const ROW_H  = 64;
+  const NODE_W = 148;
+  const NODE_H = 40;
+  const HDR_H  = 36;
+  const H      = HDR_H + buckets.length * ROW_H + 20;
+
+  svg.attr('width', W).attr('height', H);
+
+  const actors = S.actors;
+  const colW   = (W - 16) / actors.length;
+  const actorX = a => 8 + actors.indexOf(a) * colW + colW / 2;
+
+  // Position map
+  const posMap = new Map();
+  buckets.forEach((evs, bi) => {
+    const y = HDR_H + bi * ROW_H + ROW_H / 2;
+    evs.forEach(e => posMap.set(e.message_id, { x: actorX(e.actor), y }));
+  });
+
+  // ── SVG defs ──
+  const defs = svg.append('defs');
+  [['arr-crit','#bd3f2f'],['arr-warn','#e76f51'],['arr-dim','rgba(120,130,140,.5)']].forEach(([id, fill]) => {
+    defs.append('marker').attr('id', id)
+      .attr('viewBox','0 -4 8 8').attr('refX', 16).attr('refY', 0)
+      .attr('markerWidth', 5).attr('markerHeight', 5).attr('orient','auto')
+      .append('path').attr('d','M0,-4L8,0L0,4').attr('fill', fill);
+  });
+  const glow = defs.append('filter').attr('id','chain-glow')
+    .attr('x','-40%').attr('y','-40%').attr('width','180%').attr('height','180%');
+  glow.append('feGaussianBlur').attr('stdDeviation','2.5').attr('result','blur');
+  const fm = glow.append('feMerge');
+  fm.append('feMergeNode').attr('in','blur');
+  fm.append('feMergeNode').attr('in','SourceGraphic');
+
+  // ── Column headers & lane guides ──
+  actors.forEach(actor => {
+    const x   = actorX(actor);
+    const col = S.acol[actor] || '#888';
+    svg.append('rect')
+      .attr('x', x - colW/2 + 3).attr('y', 1)
+      .attr('width', colW - 6).attr('height', HDR_H - 4)
+      .attr('rx', 5).attr('fill', col + '22').attr('stroke', col + '55').attr('stroke-width', 1);
+    svg.append('text').attr('x', x).attr('y', HDR_H - 9)
+      .attr('text-anchor','middle').attr('font-size', 9)
+      .attr('font-family','var(--mono)').attr('font-weight', 600).attr('fill', col)
+      .text(actor.replace('_agent',''));
+    svg.append('line')
+      .attr('x1', x).attr('y1', HDR_H).attr('x2', x).attr('y2', H - 6)
+      .attr('stroke', col + '28').attr('stroke-width', 1).attr('stroke-dasharray','4 4');
+  });
+
+  // ── Build causal edges ──
+  const byId   = new Map(S.events.map(e => [e.message_id, e]));
+  const impSet = new Set(important.map(e => e.message_id));
+  const edges  = [];
+
+  for (const e of important) {
+    if (!e.responding_to) continue;
+    const parent = byId.get(e.responding_to);
+    if (parent && impSet.has(parent.message_id)) {
+      edges.push({ src: parent, tgt: e, type: 'reply' });
+    }
+  }
+
+  const releases = important.filter(e => e.eventType === 'Release');
+  const enablers = important.filter(e => ['Decision','Compliance'].includes(e.eventType));
+
+  for (const rel of releases) {
+    const prior = enablers
+      .filter(d => d.time <= rel.time && (rel.time - d.time) <= 2*3600*1000)
+      .sort((a, b) => b.time - a.time)
+      .slice(0, 2);
+    for (const d of prior) {
+      if (!edges.some(ex => ex.src.message_id === d.message_id && ex.tgt.message_id === rel.message_id)) {
+        edges.push({ src: d, tgt: rel, type: 'enables' });
+      }
+    }
+  }
+
+  // ── Critical path (BFS backward from each Release) ──
+  const inMap     = new Map();
+  for (const e of edges) {
+    if (!inMap.has(e.tgt.message_id)) inMap.set(e.tgt.message_id, []);
+    inMap.get(e.tgt.message_id).push(e);
+  }
+
+  const critNodes = new Set();
+  const critEdges = new Set();
+  for (const rel of releases) {
+    critNodes.add(rel.message_id);
+    const queue = [rel.message_id];
+    const seen  = new Set();
+    while (queue.length) {
+      const curr = queue.shift();
+      if (seen.has(curr)) continue;
+      seen.add(curr);
+      for (const edge of (inMap.get(curr) || [])) {
+        critEdges.add(`${edge.src.message_id}|${edge.tgt.message_id}`);
+        critNodes.add(edge.src.message_id);
+        queue.push(edge.src.message_id);
+      }
+    }
+  }
+
+  // ── Draw edges ──
+  for (const edge of edges) {
+    const sp = posMap.get(edge.src.message_id);
+    const tp = posMap.get(edge.tgt.message_id);
+    if (!sp || !tp) continue;
+
+    const isCrit  = critEdges.has(`${edge.src.message_id}|${edge.tgt.message_id}`);
+    const sameCol = Math.abs(sp.x - tp.x) < 5;
+    const sy = sp.y + NODE_H/2;
+    const ty = tp.y - NODE_H/2;
+
+    let path;
+    if (sameCol) {
+      const off = 52;
+      path = `M${sp.x},${sy}C${sp.x+off},${sy+18} ${tp.x+off},${ty-18} ${tp.x},${ty}`;
+    } else {
+      path = `M${sp.x},${sy}Q${(sp.x+tp.x)/2},${(sy+ty)/2} ${tp.x},${ty}`;
+    }
+
+    const markerId = isCrit ? (edge.type === 'enables' ? 'arr-crit' : 'arr-warn') : 'arr-dim';
+    svg.append('path')
+      .attr('d', path).attr('fill','none')
+      .attr('stroke', isCrit
+        ? (edge.type === 'enables' ? '#bd3f2f' : '#e76f51')
+        : (edge.type === 'reply'   ? '#8a9aaa' : '#c0854a'))
+      .attr('stroke-width', isCrit ? 2.5 : 1.1)
+      .attr('stroke-dasharray', !isCrit && edge.type === 'reply' ? '4 3' : 'none')
+      .attr('opacity', isCrit ? 0.9 : 0.36)
+      .attr('marker-end', `url(#${markerId})`);
+  }
+
+  // ── Draw event nodes ──
+  for (const e of important) {
+    const pos  = posMap.get(e.message_id);
+    if (!pos) continue;
+
+    const isCrit = critNodes.has(e.message_id);
+    const col    = ECOL[e.eventType] || '#aaa';
+    const hw     = NODE_W / 2;
+    const hh     = NODE_H / 2;
+
+    const g = svg.append('g')
+      .attr('transform', `translate(${pos.x},${pos.y})`)
+      .style('cursor','pointer')
+      .on('mousemove', ev => showTip(ev,
+        `<b>${e.eventType}</b> · ${e.actor}<br>${fmtT(e.time)}<br><i>${esc((e.content||'').slice(0,220))}</i>`))
+      .on('mouseout', hideTip)
+      .on('click', () => { S.pinned = e; renderMessages(); renderTimeline(); });
+
+    g.append('rect')
+      .attr('x', -hw).attr('y', -hh)
+      .attr('width', NODE_W).attr('height', NODE_H)
+      .attr('rx', 7)
+      .attr('fill',         isCrit ? col + '28' : col + '10')
+      .attr('stroke',       col)
+      .attr('stroke-width', isCrit ? 2 : 0.7)
+      .attr('filter',       isCrit ? 'url(#chain-glow)' : 'none');
+
+    g.append('text')
+      .attr('x', -hw + 5).attr('y', -hh + 13)
+      .attr('font-size', 8).attr('font-weight', 700)
+      .attr('font-family','var(--mono)').attr('fill', col)
+      .text(e.eventType.slice(0,7).toUpperCase());
+
+    g.append('text')
+      .attr('x', hw - 4).attr('y', -hh + 13)
+      .attr('font-size', 8).attr('text-anchor','end')
+      .attr('font-family','var(--mono)').attr('fill','#6a7268')
+      .text(d3.timeFormat('%H:%M')(e.time));
+
+    const excerpt = (e.content || '').replace(/\s+/g,' ').slice(0, 30);
+    g.append('text')
+      .attr('x', -hw + 5).attr('y', hh - 8)
+      .attr('font-size', 8.5)
+      .attr('fill', isCrit ? '#1a2026' : '#4a5050')
+      .text(excerpt + ((e.content||'').length > 30 ? '…' : ''));
+  }
+
+  // ── Story narrative ──
+  buildCausalStory(releases, important, edges, critNodes, inMap, storyEl);
+}
+
+function buildCausalStory(releases, important, edges, critNodes, inMap, storyEl) {
+  const byId = new Map(important.map(e => [e.message_id, e]));
+
+  if (!releases.length) {
+    storyEl.innerHTML = '<p style="font-size:.75rem;color:var(--muted)">No Release events in current window. Expand the brush or lower the importance threshold.</p>';
+    return;
+  }
+
+  const compliance = important.filter(e => e.eventType === 'Compliance');
+  const risks      = important.filter(e => e.eventType === 'RiskSignal');
+
+  let html = '<h3>Causal path narrative</h3>';
+
+  for (const rel of releases) {
+    // Reconstruct causal chain backward from this release
+    const chain = [];
+    const queue = [rel.message_id];
+    const seen  = new Set();
+    while (queue.length) {
+      const curr = queue.shift();
+      if (seen.has(curr)) continue;
+      seen.add(curr);
+      const ev = byId.get(curr);
+      if (ev) chain.push(ev);
+      for (const edge of (inMap.get(curr) || [])) queue.push(edge.src.message_id);
+    }
+    chain.sort((a, b) => a.time - b.time);
+
+    const hasCompliance = compliance.some(c =>
+      c.time <= rel.time && (rel.time - c.time) <= 2*3600*1000
+    );
+    const priorRisks = risks.filter(r =>
+      r.time < rel.time && (rel.time - r.time) <= 4*3600*1000
+    );
+
+    html += `<div style="margin-bottom:12px;padding:8px 12px;background:#bd3f2f0d;border-left:4px solid #bd3f2f;border-radius:0 6px 6px 0;">`;
+    html += `<div style="font-size:.79rem;font-weight:700;margin-bottom:6px;color:#bd3f2f;">`;
+    html += `RELEASE — ${esc(rel.actor)} · ${fmtT(rel.time)}</div>`;
+
+    if (!hasCompliance && priorRisks.length) {
+      html += `<div style="font-size:.73rem;color:#c45c2f;background:#f4a26118;border:1px solid #f4a26144;border-radius:5px;padding:4px 8px;margin-bottom:7px;">`;
+      html += `⚠ ${priorRisks.length} risk signal(s) raised in the prior 4h with no compliance checkpoint before release.</div>`;
+    } else if (!hasCompliance) {
+      html += `<div style="font-size:.73rem;color:var(--muted);margin-bottom:7px;">No compliance checkpoint found in the 2h window preceding this release.</div>`;
+    }
+
+    if (chain.length) {
+      html += `<div style="display:flex;flex-direction:column;gap:4px;">`;
+      for (const ev of chain.slice(-9)) {
+        const ecol    = ECOL[ev.eventType] || '#aaa';
+        const excerpt = esc((ev.content || '').replace(/\s+/g,' ').slice(0, 120));
+        html += `<div style="display:flex;gap:8px;align-items:baseline;font-size:.74rem;line-height:1.4;">
+          <span style="font-size:.65rem;font-weight:700;font-family:var(--mono);color:${ecol};min-width:72px;white-space:nowrap">${ev.eventType.toUpperCase()}</span>
+          <span style="font-family:var(--mono);font-size:.65rem;color:var(--muted);white-space:nowrap">${esc(ev.actor)} · ${fmtT(ev.time)}</span>
+          <span style="color:var(--text)">${excerpt}${ev.content && ev.content.length > 120 ? '…' : ''}</span>
+        </div>`;
+      }
+      html += `</div>`;
+    }
+    html += `</div>`;
+  }
+
+  storyEl.innerHTML = html;
+}
+
+// ═══════════════════════════════
 // INIT
 // ═══════════════════════════════
 async function init(force = false) {
@@ -812,7 +1271,7 @@ async function init(force = false) {
     S.events = events;
     S.actors = Array.from(new Set(events.map(e => e.actor))).sort();
     S.acol   = Object.fromEntries(S.actors.map((a, i) => [a, APAL[i % APAL.length]]));
-    if (force) { S.brush = null; S.pinned = null; }
+    if (force) { S.brush = null; S.pinned = null; S.zoomState = null; }
 
     renderLegend();
     renderAll();
@@ -852,6 +1311,31 @@ document.getElementById('btn-reset-brush').addEventListener('click', () => {
   S.pinned = null;
   document.getElementById('msg-notice').style.display = 'none';
   renderAll();
+});
+
+// Importance threshold — tl-threshold (swimlane toolbar) and chain-threshold (section 3) stay in sync
+document.getElementById('tl-threshold').addEventListener('input', function() {
+  const v = this.value;
+  document.getElementById('tl-threshold-val').textContent = v;
+  document.getElementById('chain-threshold').value = v;
+  document.getElementById('chain-threshold-val').textContent = v;
+  renderTimeline();
+  renderCausalChain();
+});
+document.getElementById('chain-threshold').addEventListener('input', function() {
+  const v = this.value;
+  document.getElementById('chain-threshold-val').textContent = v;
+  document.getElementById('tl-threshold').value = v;
+  document.getElementById('tl-threshold-val').textContent = v;
+  renderTimeline();
+  renderCausalChain();
+});
+
+document.getElementById('btn-reset-zoom').addEventListener('click', () => {
+  S.zoomState = null;
+  document.getElementById('tl-zoom-level').textContent = '1×';
+  if (S.zoomBehavior) d3.select('#tl-svg').call(S.zoomBehavior.transform, d3.zoomIdentity);
+  else renderTimeline();
 });
 
 let resizeTimer;
