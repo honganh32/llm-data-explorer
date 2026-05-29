@@ -86,7 +86,13 @@
       "Bash(timeout 5 python3 mcp_server/server.py)",
       "Bash(python mcp_server/validate_plugin.py chart_plugins/)",
       "Bash(python -c \"from mcp_server.server import PLUGINS; print\\(len\\(PLUGINS\\), 'plugins loaded'\\); print\\('_template' in PLUGINS or 'YOUR_CHART_TYPE' in PLUGINS\\)\")",
-      "Bash(Select-Object Name)"
+      "Bash(Select-Object Name)",
+      "Bash(Sort-Object)",
+      "Bash(jq '.type' \"e:/multi-agent/llm-data-explorer/chart_plugins\"/*.json)",
+      "Bash(gh api *)",
+      "WebFetch(domain:api.github.com)",
+      "Bash(python -c \"import json; p = json.load\\(open\\('e:/multi-agent/llm-data-explorer/chart_plugins/wordstream.json', encoding='utf-8'\\)\\); print\\('type:', p['type']\\); print\\('promptDescription starts:', p['promptDescription'][:80]\\); print\\('renderScript starts:', p['renderScript'][:80]\\); print\\('JSON valid: OK'\\)\")",
+      "Bash(python mcp_server/validate_plugin.py chart_plugins/wordstream.json)"
     ],
     "additionalDirectories": [
       "e:\\multi-agent\\llm-data-explorer",

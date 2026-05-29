@@ -104,6 +104,8 @@ def suggest_chart(data_description: str) -> list[dict]:
         (["event", "milestone", "timeline", "schedule", "calendar event", "when"], ["timeline", "swimlane"]),
         # pad / adjacency
         (["adjacency", "who talks to whom", "communication", "pad", "contact"], ["pad", "graph", "timearcs"]),
+        # wordstream / text frequency over time
+        (["wordstream", "word frequency", "keyword trend", "vocabulary", "text stream", "corpus", "topic word", "word over time", "text evolv", "word cloud over time"], ["wordstream"]),
     ]
 
     scores: dict[str, int] = {t: 0 for t in PLUGINS}
