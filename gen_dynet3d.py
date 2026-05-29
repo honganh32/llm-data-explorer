@@ -87,7 +87,7 @@ if dq_count > 0:
 # Wrap in CDN-loading outer function
 render_script = (
     'function(wrap,spec){'
-    'function loadScript(url,cb){if(url.indexOf(\'OrbitControls\')>=0&&typeof THREE!==\'undefined\'&&THREE.OrbitControls){cb();return;}if(url.indexOf(\'d3\')>=0&&typeof d3!==\'undefined\'){cb();return;}if(url.indexOf(\'three\')>=0&&typeof THREE!==\'undefined\'){cb();return;}for(var i=0;i<document.scripts.length;i++){if(document.scripts[i].src.indexOf(url)>=0){if(document.scripts[i]._ld){cb();return;}document.scripts[i].addEventListener(\'load\',cb);return;}}var s=document.createElement(\'script\');s.src=url;s.onload=function(){s._ld=true;cb();};document.head.appendChild(s);}'
+    'function loadScript(url,cb){if(url.indexOf(\'OrbitControls\')>=0&&typeof THREE!==\'undefined\'&&typeof THREE.OrbitControls===\'function\'&&THREE.OrbitControls.prototype){cb();return;}if(url.indexOf(\'d3\')>=0&&typeof d3!==\'undefined\'){cb();return;}if(url.indexOf(\'build/three\')>=0&&typeof THREE!==\'undefined\'&&typeof THREE.Scene===\'function\'){cb();return;}for(var i=0;i<document.scripts.length;i++){if(document.scripts[i].src.indexOf(url)>=0){if(document.scripts[i]._ld){cb();return;}document.scripts[i].addEventListener(\'load\',cb);return;}}var s=document.createElement(\'script\');s.src=url;s.onload=function(){s._ld=true;cb();};document.head.appendChild(s);}'
     'loadScript(\'https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js\',function(){'
     'loadScript(\'https://cdn.jsdelivr.net/npm/three@0.131.0/build/three.min.js\',function(){'
     'loadScript(\'https://cdn.jsdelivr.net/npm/three@0.131.0/examples/js/controls/OrbitControls.js\',function(){'
