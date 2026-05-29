@@ -3781,6 +3781,41 @@ function mergeRowsIntoSpec(spec, rows) {
       event_id: pick(r, 'event_id', 'eventId', 'id'),
       cause_id: pick(r, 'cause_id', 'causeId', 'parent_id', 'prev_id', 'caused_by'),
     }));
+  } else if (type === 'wordstream') {
+    // Rows: period/date/time, category/topic, word/text/term, frequency/count
+    // Pivot into [{date, words:{category:[{text,frequency}]}}]
+    const periodMap = new Map();
+    rows.forEach(r => {
+      const period   = String(pick(r, 'period', 'date', 'time', 'year', 'month', 'bucket') ?? '');
+      const category = String(pick(r, 'category', 'topic', 'label', 'group', 'agent_role', 'role') ?? 'Default');
+      const text     = String(pick(r, 'word', 'text', 'term', 'keyword', 'token') ?? '');
+      const freq     = +(pick(r, 'frequency', 'count', 'cnt', 'freq', 'value') ?? 0);
+      if (!period || !text || freq <= 0) return;
+      if (!periodMap.has(period)) periodMap.set(period, new Map());
+      const catMap = periodMap.get(period);
+      if (!catMap.has(category)) catMap.set(category, []);
+      catMap.get(category).push({ text, frequency: freq });
+    });
+    const periods = [...periodMap.keys()].sort((a, b) => {
+      const da = Date.parse(a), db = Date.parse(b);
+      if (!isNaN(da) && !isNaN(db)) return da - db;
+      const na = +a, nb = +b;
+      if (!isNaN(na) && !isNaN(nb)) return na - nb;
+      return a < b ? -1 : a > b ? 1 : 0;
+    });
+    // Collect all categories across all periods
+    const allCats = new Set();
+    periodMap.forEach(catMap => catMap.forEach((_, cat) => allCats.add(cat)));
+    s.data = periods.map(period => {
+      const words = {};
+      // Every period must have an entry for every category (even if empty)
+      // so wordstream's .splice() call never hits undefined
+      allCats.forEach(cat => {
+        const items = periodMap.get(period).get(cat) || [];
+        words[cat] = items.sort((a, b) => b.frequency - a.frequency);
+      });
+      return { date: period, words };
+    });
   }
   return s;
 }
