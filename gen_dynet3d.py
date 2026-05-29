@@ -87,7 +87,7 @@ if dq_count > 0:
 # Wrap in CDN-loading outer function
 render_script = (
     'function(wrap,spec){'
-    'function loadScript(url,cb){for(var i=0;i<document.scripts.length;i++){if(document.scripts[i].src.indexOf(url)>=0){if(document.scripts[i]._ld){cb();return;}document.scripts[i].addEventListener(\'load\',cb);return;}}var s=document.createElement(\'script\');s.src=url;s.onload=function(){s._ld=true;cb();};document.head.appendChild(s);}'
+    'function loadScript(url,cb){if(url.indexOf(\'OrbitControls\')>=0&&typeof THREE!==\'undefined\'&&THREE.OrbitControls){cb();return;}if(url.indexOf(\'d3\')>=0&&typeof d3!==\'undefined\'){cb();return;}if(url.indexOf(\'three\')>=0&&typeof THREE!==\'undefined\'){cb();return;}for(var i=0;i<document.scripts.length;i++){if(document.scripts[i].src.indexOf(url)>=0){if(document.scripts[i]._ld){cb();return;}document.scripts[i].addEventListener(\'load\',cb);return;}}var s=document.createElement(\'script\');s.src=url;s.onload=function(){s._ld=true;cb();};document.head.appendChild(s);}'
     'loadScript(\'https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js\',function(){'
     'loadScript(\'https://cdn.jsdelivr.net/npm/three@0.131.0/build/three.min.js\',function(){'
     'loadScript(\'https://cdn.jsdelivr.net/npm/three@0.131.0/examples/js/controls/OrbitControls.js\',function(){'
@@ -101,11 +101,19 @@ prompt_desc = (
     'Drag to orbit, scroll to zoom; Reset to Front view collapses to 2D; Side view exposes the time axis. '
     'Best for showing how a network evolves over time. '
     'Spec (lazy SQL form): { "type":"dynet3d", "title":"...", "sql":"SELECT day::text AS time, src_ip AS source, dst_ip AS target, attack_type AS category, COUNT(*) AS value FROM events GROUP BY day, src_ip, dst_ip, attack_type ORDER BY day" }. '
-    'Spec (inline form): { "type":"dynet3d", "title":"...", "timeLabels":["Jan","Feb"], '
+    'Spec (inline snapshots form): { "type":"dynet3d", "title":"...", "timeLabels":["Jan","Feb"], '
     '"nodes":[{"id":"u1","name":"Alice","type":"user"}], '
     '"snapshots":[{"time":"Jan","links":[{"source":"u1","target":"r1","value":5}]}] }. '
+    'Spec (flat events form — preferred when data is a list of timestamped edges): '
+    '{ "type":"dynet3d", "title":"...", "events":[{"year":2023,"source":"Alice","target":"Bob","category":"collab","value":1}] }. '
+    'The events form accepts year/time/period/date/month as the time key, source/src/from and target/dst/to as endpoints, '
+    'category/type for link color, value/count for weight. '
     'Recognised columns: time (or period/date/day/month), source (or src/from), target (or dst/to), '
-    'optional value/count, optional category/type (link color), optional source_type/target_type.'
+    'optional value/count, optional category/type (link color), optional source_type/target_type. '
+    'IMPORTANT — do not write custom Three.js rendering code. Always produce a spec object and pass it to '
+    'the renderScript. If you must reference OrbitControls in any standalone Three.js snippet, use '
+    'THREE.OrbitControls (not a bare OrbitControls global) — the Three.js r131 examples/js build attaches '
+    'it to the THREE namespace.'
 )
 
 plugin = {

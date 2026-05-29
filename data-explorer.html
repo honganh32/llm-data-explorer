@@ -2415,6 +2415,27 @@ function renderDynet3D(wrap, spec) {
   const t = getThemeColors();
 
   // ── Parse + normalize input ──────────────────────────────────────────────
+  // Accept flat events array (e.g. [{year, source, target, category, value}])
+  // and convert to snapshots format so callers don't need to reshape their data.
+  if (spec.events && !spec.snapshots) {
+    const byTime = new Map();
+    spec.events.forEach(ev => {
+      const t = String(ev.year ?? ev.time ?? ev.period ?? ev.date ?? ev.month ?? '');
+      if (!byTime.has(t)) byTime.set(t, []);
+      byTime.get(t).push({
+        source: String(ev.source || ev.src || ev.from || ''),
+        target: String(ev.target || ev.dst || ev.to || ''),
+        type:   ev.category || ev.type || undefined,
+        value:  ev.value || ev.count || 1,
+      });
+    });
+    const sortedTimes = [...byTime.keys()].sort((a, b) =>
+      a.localeCompare(b, undefined, { numeric: true })
+    );
+    spec = { ...spec, snapshots: sortedTimes.map(t => ({ time: t, links: byTime.get(t) })) };
+    if (!spec.timeLabels) spec = { ...spec, timeLabels: sortedTimes };
+  }
+
   const snapshots = (spec.snapshots || []).map((s, i) => ({
     time: s.time != null ? String(s.time) : ('T' + i),
     activeNodes: (s.activeNodes || []).map(String),
