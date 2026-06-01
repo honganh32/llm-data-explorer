@@ -145,6 +145,12 @@
   .chart-loading-title { font-size:12px; font-weight:500; color:var(--text2); }
   .chart-loading-status { font-size:11px; color:var(--text3); }
   .chart-loading-rows { font-size:11px; color:var(--text3); font-family:var(--mono); min-height:14px; }
+  .chart-trim-banner { font-size:11px; color:var(--warn-text); background:var(--warn-bg); border-radius:var(--radius-sm); padding:6px 10px; margin-bottom:8px; }
+  .chart-group-panel { display:flex; align-items:center; gap:6px; flex-wrap:wrap; padding:6px 16px 8px; border-bottom:0.5px solid var(--border); margin-bottom:2px; }
+  .chart-group-label { font-size:11px; color:var(--text3); flex-shrink:0; }
+  .chart-group-chip { font-size:11px; padding:3px 10px; border-radius:20px; border:0.5px solid var(--border2); background:var(--bg2); color:var(--text2); cursor:pointer; transition:background 0.1s; }
+  .chart-group-chip:hover { background:var(--bg3); }
+  .chart-group-chip.active { background:var(--accent-bg); color:var(--accent-text); border-color:transparent; }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
@@ -1229,7 +1235,8 @@ function renderGraph(wrap, spec) {
   mainRow.appendChild(chartDiv);
 
   // ── Control panel ─────────────────────────────────────────────────────
-  let grpBtn = null, catBtn = null, grpSec = null;
+  let grpBtn = null, catBtn = null, grpSec = null, grpHoverSec = null;
+  let aiLabelSec = null, aiLabelBtn = null, aiProgressWrap = null, aiProgressFill = null, aiProgressText = null;
   const methodBtns = new Map();
   const legendItems = [];
 
@@ -1478,6 +1485,30 @@ function renderGraph(wrap, spec) {
   grpSec.style.display = (l1Count > 0 || l2Count > 0) ? '' : 'none';
   ctrlPanel.appendChild(grpSec);
 
+  // AI Group Labels section
+  aiLabelSec = mkPanelSection('AI Labels');
+  aiLabelSec.style.display = 'none';
+
+  aiLabelBtn = mkBtn('Generate AI labels');
+  aiLabelBtn.style.cssText += ';background:var(--accent-bg,#EEEDFE);color:var(--accent-text,#3C3489);border-color:var(--accent,#534AB7);font-weight:500;';
+  aiLabelSec.appendChild(aiLabelBtn);
+
+  aiProgressWrap = document.createElement('div');
+  aiProgressWrap.style.cssText = 'display:none;flex-direction:column;gap:3px;margin-top:6px;';
+  const _pBarTrack = document.createElement('div');
+  _pBarTrack.style.cssText = 'width:100%;height:4px;background:var(--border,#ddd);border-radius:2px;overflow:hidden;';
+  aiProgressFill = document.createElement('div');
+  aiProgressFill.style.cssText = 'height:100%;width:0%;background:var(--accent,#534AB7);border-radius:2px;transition:width 0.25s ease;';
+  _pBarTrack.appendChild(aiProgressFill);
+  aiProgressText = document.createElement('div');
+  aiProgressText.style.cssText = 'font-size:10px;color:var(--text3,#999);';
+  aiProgressWrap.appendChild(_pBarTrack);
+  aiProgressWrap.appendChild(aiProgressText);
+  aiLabelSec.appendChild(aiProgressWrap);
+
+  aiLabelBtn.onclick = () => generateGroupLabels();
+  ctrlPanel.appendChild(aiLabelSec);
+
   // Group Profile panel — shown when a group node is clicked
   const grpProfileSec = mkPanelSection('Group Profile');
   grpProfileSec.style.display = 'none';
@@ -1520,6 +1551,26 @@ function renderGraph(wrap, spec) {
   const hullCanvas = document.createElement('canvas');
   hullCanvas.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;';
   chartDiv.appendChild(hullCanvas);
+
+  // Group-info floating panel — anchored to the bottom of the canvas.
+  grpHoverSec = document.createElement('div');
+  grpHoverSec.style.cssText = [
+    'position:absolute;bottom:12px;left:12px;',
+    'max-width:320px;min-width:200px;width:max-content;',
+    'background:var(--bg,#fff);border:1px solid var(--border2,#ccc);border-radius:6px;',
+    'box-shadow:0 2px 10px rgba(0,0,0,0.15);padding:10px 12px;',
+    'font-family:var(--font,sans-serif);pointer-events:none;z-index:20;',
+    'display:none;',
+  ].join('');
+  const _grpHoverLbl = document.createElement('div');
+  _grpHoverLbl.style.cssText = 'font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--text3,#999);margin-bottom:5px;padding-bottom:3px;border-bottom:0.5px solid var(--border,#ddd);';
+  _grpHoverLbl.textContent = 'Hovered Group';
+  grpHoverSec.appendChild(_grpHoverLbl);
+  const _grpHoverContent = document.createElement('div');
+  _grpHoverContent.className = 'grp-hover-content';
+  _grpHoverContent.style.cssText = 'font-size:11px;';
+  grpHoverSec.appendChild(_grpHoverContent);
+  chartDiv.appendChild(grpHoverSec);
 
   // Stores computed hull polygons so the click handler can do hit-testing.
   const hullPolys = []; // [{gid, poly, circle}]  poly=null means circle fallback
@@ -1707,18 +1758,35 @@ function renderGraph(wrap, spec) {
     _hullRaf = requestAnimationFrame(() => { _hullRaf = null; redrawHulls(); });
   });
 
-  // Hull tooltip — fixed-position overlay that follows the cursor.
-  // Created once per renderGraph call; appended to body so it escapes any
-  // overflow:hidden containers. Cleaned up when the chart area is left.
-  const hullTooltip = document.createElement('div');
-  hullTooltip.style.cssText = 'position:fixed;z-index:9999;background:#fff;border:1px solid #e0e0e0;border-radius:5px;padding:8px 10px;font-size:12px;pointer-events:none;display:none;max-width:300px;box-shadow:0 3px 10px rgba(0,0,0,0.13);line-height:1.5;font-family:inherit;color:#333;';
-  document.body.appendChild(hullTooltip);
+  // Hovered-group info lives in grpHoverSec, a floating panel anchored to the
+  // bottom of chartDiv. These helpers are called from hull/ECharts event handlers.
   let lastHullTooltipGid = null;
 
-  // Track when ECharts is showing its own node tooltip so we suppress ours.
+  function showGroupPanel(gid) {
+    if (!grpHoverSec) return;
+    if (gid !== lastHullTooltipGid) {
+      grpHoverSec.querySelector('.grp-hover-content').innerHTML = buildGroupTooltip(gid);
+      lastHullTooltipGid = gid;
+    }
+    grpHoverSec.style.display = '';
+  }
+  function hideGroupPanel() {
+    if (grpHoverSec) grpHoverSec.style.display = 'none';
+    lastHullTooltipGid = null;
+  }
+
+  // Track when ECharts is showing its own node tooltip so we suppress hull panel.
   let ecNodeHovered = false;
-  ec.on('mouseover', p => { if (p.dataType === 'node') ecNodeHovered = true; });
-  ec.on('mouseout',  p => { if (p.dataType === 'node') { ecNodeHovered = false; } });
+  ec.on('mouseover', p => {
+    if (p.dataType !== 'node') return;
+    ecNodeHovered = true;
+    if (p.data?._isGroup) showGroupPanel(p.data._gid);
+  });
+  ec.on('mouseout', p => {
+    if (p.dataType !== 'node') return;
+    ecNodeHovered = false;
+    if (p.data?._isGroup) hideGroupPanel();
+  });
 
   // hullCanvas has pointer-events:none, so mouse events fall through to chartDiv.
   // We do all hull hit-testing here — hover highlight AND tooltip in one handler.
@@ -1744,140 +1812,247 @@ function renderGraph(wrap, spec) {
       redrawHulls();
     }
 
-    // ── Hull tooltip for expanded groups ─────────────────────────────────
-    // Collapsed groups use ECharts' own tooltip; expanded hulls have no node
-    // to hover, so we render a custom tooltip over the polygon interior.
-    const g = foundGid ? gInfo.get(foundGid) : null;
-    if (g && g.expanded && !ecNodeHovered) {
-      if (foundGid !== lastHullTooltipGid) {
-        hullTooltip.innerHTML = buildGroupTooltip(foundGid);
-        lastHullTooltipGid = foundGid;
-      }
-      hullTooltip.style.display = '';
-      // Clamp to viewport: prefer right-of-cursor, fall back to left if needed.
-      const tw = 310, th = 170;
-      const vw = window.innerWidth, vh = window.innerHeight;
-      let tx = e.clientX + 14, ty = e.clientY - 20;
-      if (tx + tw > vw) tx = e.clientX - tw - 14;
-      if (ty + th > vh) ty = vh - th - 10;
-      if (ty < 0) ty = 10;
-      hullTooltip.style.left = tx + 'px';
-      hullTooltip.style.top  = ty + 'px';
-    } else {
-      hullTooltip.style.display = 'none';
-      lastHullTooltipGid = null;
+    // ── Group info panel for expanded hull hover ──────────────────────────
+    // When ecNodeHovered is true the ec.on('mouseover'/'mouseout') handlers own
+    // the panel — do nothing here to avoid a race with the ECharts event queue.
+    if (!ecNodeHovered) {
+      const g = foundGid ? gInfo.get(foundGid) : null;
+      if (g && g.expanded) showGroupPanel(foundGid);
+      else hideGroupPanel();
     }
   });
 
   chartDiv.addEventListener('mouseleave', () => {
     if (hoveredGroupGid !== null) { hoveredGroupGid = null; redrawHulls(); }
-    hullTooltip.style.display = 'none';
-    lastHullTooltipGid = null;
+    hideGroupPanel();
   });
   // ── End hull overlay ─────────────────────────────────────────────────────
 
   const directed = !!spec.directed;
 
-  // ── LLM group label generation ───────────────────────────────────────────
-  // Fires a single batched call for all L1 groups using aggregated stats only
-  // (O(groups × attrs) tokens, not O(nodes × attrs)).
+  // ── LLM group label generation — with localStorage cache ────────────────
+  // Labels are keyed by a content fingerprint (algo + size + density + top
+  // distinguishing attrs), not by gid. gids change on every rerender because
+  // they come from a running counter; the fingerprint is stable for the same
+  // dataset so it survives page refreshes and conversation reopens.
+
+  const _GEN_SKIP = new Set(['id','name','label','size','value','color','x','y','z','fx','fy','index','vx','vy']);
+  const _CACHE_PFX = 'llm_gl_v1_';
+  const _CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+  // Computed once per chart instance — shared by fingerprinting and profile rendering.
+  const _nodeById = new Map(allNodes.map(n => [n.id, n]));
+  const _globalAttrFreq = new Map();
+  for (const n of allNodes) {
+    for (const [k, v] of Object.entries(n)) {
+      if (_GEN_SKIP.has(k) || v == null || v === '') continue;
+      const key = k + '=' + v;
+      _globalAttrFreq.set(key, (_globalAttrFreq.get(key) || 0) + 1);
+    }
+  }
+
+  // Adjacency index built once in O(E); lets _groupSummary walk only incident edges
+  // instead of scanning all links per group (avoids O(G×E) on large graphs).
+  const _nodeEdgeIndex = new Map();
+  for (const l of links) {
+    const lab = l.label || '(unlabeled)';
+    if (!_nodeEdgeIndex.has(l.source)) _nodeEdgeIndex.set(l.source, []);
+    if (!_nodeEdgeIndex.has(l.target)) _nodeEdgeIndex.set(l.target, []);
+    _nodeEdgeIndex.get(l.source).push({ lab, peer: l.target });
+    _nodeEdgeIndex.get(l.target).push({ lab, peer: l.source });
+  }
+
+  function _djb2(s) {
+    let h = 5381;
+    for (let i = 0; i < s.length; i++) h = (h * 33 ^ s.charCodeAt(i)) >>> 0;
+    return h.toString(36);
+  }
+
+  // Build the top-feature summary for one group. Returns { featStr, fp }.
+  // featStr goes into the LLM prompt; fp is the localStorage cache key.
+  function _groupSummary(g) {
+    const memberNodes = g.members.map(id => _nodeById.get(id)).filter(Boolean);
+    const n = Math.max(1, memberNodes.length), N = Math.max(1, allNodes.length);
+    const attrFreq = new Map();
+    for (const node of memberNodes) {
+      for (const [k, v] of Object.entries(node)) {
+        if (_GEN_SKIP.has(k) || v == null || v === '') continue;
+        const key = k + '=' + v;
+        attrFreq.set(key, (attrFreq.get(key) || 0) + 1);
+      }
+    }
+    const ranked = [...attrFreq.entries()]
+      .map(([key, count]) => {
+        const lp = count / n, gp = (_globalAttrFreq.get(key) || 0) / N;
+        return { key, pct: Math.round(lp * 100), lift: gp > 0 ? lp / gp : lp * 10 };
+      })
+      .filter(f => f.pct >= 40)
+      .sort((a, b) => b.lift - a.lift)
+      .slice(0, 4);
+    const density = g.internalDensity != null ? g.internalDensity
+      : computeGroupInternalDensity(g.members, links);
+
+    // Compute edge-label distributions using the pre-built index: O(member degrees)
+    // instead of O(E). Internal = both endpoints in group; bridge = one crosses boundary.
+    // Each undirected internal edge is visited twice (once per endpoint) so we halve the count.
+    const mset = new Set(g.members);
+    const internalEdgeCounts = new Map();
+    const bridgeEdgeCounts   = new Map();
+    for (const id of g.members) {
+      for (const { lab, peer } of (_nodeEdgeIndex.get(id) || [])) {
+        if (mset.has(peer)) internalEdgeCounts.set(lab, (internalEdgeCounts.get(lab) || 0) + 1);
+        else bridgeEdgeCounts.set(lab, (bridgeEdgeCounts.get(lab) || 0) + 1);
+      }
+    }
+    const topInternal = [...internalEdgeCounts.entries()]
+      .sort((a, b) => b[1] - a[1]).slice(0, 3)
+      .map(([t, c]) => `${t}(${Math.round(c / 2)})`).join(',');
+    const topBridge = [...bridgeEdgeCounts.entries()]
+      .sort((a, b) => b[1] - a[1]).slice(0, 3)
+      .map(([t, c]) => `${t}(${c})`).join(',');
+
+    const attrPart  = ranked.map(f => `${f.key}(${f.pct}%)`).join(', ') || 'none';
+    const featStr   = `attrs: ${attrPart}` +
+      (topInternal ? ` | internal_edges: ${topInternal}` : '') +
+      (topBridge   ? ` | bridge_edges: ${topBridge}`    : '');
+
+    // Include top edge types in fingerprint so the cache key changes when relationships change.
+    const fpRaw = ranked.map(f => f.key).sort().join(',') + '|' + topInternal + '|' + topBridge;
+    const fp = _djb2(`${g.kind}|${g.members.length}|${density}|${fpRaw}`);
+    return { featStr, fp, density };
+  }
+
+  function _loadCache(fp) {
+    try {
+      const raw = localStorage.getItem(_CACHE_PFX + fp);
+      if (!raw) return null;
+      const e = JSON.parse(raw);
+      if (Date.now() - e.ts > _CACHE_TTL) { localStorage.removeItem(_CACHE_PFX + fp); return null; }
+      return { label: e.label, rationale: e.rationale };
+    } catch (_) { return null; }
+  }
+
+  function _saveCache(fp, label, rationale) {
+    try { localStorage.setItem(_CACHE_PFX + fp, JSON.stringify({ label, rationale, ts: Date.now() })); } catch (_) {}
+  }
+
+  // Synchronous: apply any cached labels before the first rerender() so the
+  // first paint already shows the right labels without a flicker.
+  function applyCachedLabels() {
+    for (const [, g] of gInfo) {
+      if (g.level !== 1 || g.llmLabel) continue;
+      const { fp } = _groupSummary(g);
+      const cached = _loadCache(fp);
+      if (cached) {
+        g.llmLabel    = cached.label;
+        g.llmRationale = cached.rationale;
+        g.displayLabel = cached.label;
+      }
+    }
+  }
+
+  // Async: only call the API for groups that still have no cached label.
+  // Results are written back to localStorage so subsequent loads are free.
+  // Updates the AI label button text/state based on how many L1 groups still lack labels.
+  function _syncAiLabelBtn() {
+    if (!aiLabelSec) return;
+    const l1 = [...gInfo.values()].filter(g => g.level === 1);
+    const missing = l1.filter(g => !g.llmLabel).length;
+    aiLabelSec.style.display = l1.length > 0 ? '' : 'none';
+    if (missing === 0 && l1.length > 0) {
+      aiLabelBtn.textContent = '✓ Labels ready';
+      aiLabelBtn.disabled = true;
+    } else {
+      aiLabelBtn.textContent = missing < l1.length
+        ? `Generate AI labels (${missing} missing)`
+        : 'Generate AI labels';
+      aiLabelBtn.disabled = false;
+    }
+  }
+
+  const _LLM_SYSTEM = 'You are a network visualization assistant. Generate concise semantic labels for network groups. Each group description includes node attributes, internal_edges (relationship types between members), and bridge_edges (relationship types connecting this group to others). Prefer labels that reflect the dominant relationship roles (e.g. "Order-Issuing Customers", "Supplier Hub Nodes") over generic structural labels. Labels should be ≤5 words with no quotes.';
+  const _LLM_BATCH = 15;
+
   async function generateGroupLabels() {
     const l1Groups = [...gInfo.entries()].filter(([, g]) => g.level === 1);
     if (!l1Groups.length) return;
 
-    const GEN_SKIP = new Set(['id','name','label','size','value','color','x','y','z','fx','fy','index','vx','vy']);
-    const nodeById = new Map(allNodes.map(n => [n.id, n]));
-
-    // Global attribute frequencies — used to compute lift scores per group
-    const globalFreq = new Map();
-    for (const n of allNodes) {
-      for (const [k, v] of Object.entries(n)) {
-        if (GEN_SKIP.has(k) || v == null || v === '') continue;
-        const key = k + '=' + v;
-        globalFreq.set(key, (globalFreq.get(key) || 0) + 1);
-      }
-    }
-
-    const summaries = l1Groups.map(([gid, g]) => {
-      const memberNodes = g.members.map(id => nodeById.get(id)).filter(Boolean);
-      const density = g.internalDensity != null ? g.internalDensity
-        : computeGroupInternalDensity(g.members, links);
-
-      // Attribute lift: how much more common is each value here vs. globally?
-      const attrFreq = new Map();
-      for (const n of memberNodes) {
-        for (const [k, v] of Object.entries(n)) {
-          if (GEN_SKIP.has(k) || v == null || v === '') continue;
-          const key = k + '=' + v;
-          attrFreq.set(key, (attrFreq.get(key) || 0) + 1);
-        }
-      }
-      const features = [...attrFreq.entries()]
-        .map(([key, count]) => {
-          const localPct = count / Math.max(1, memberNodes.length);
-          const globalPct = (globalFreq.get(key) || 0) / Math.max(1, allNodes.length);
-          const lift = globalPct > 0 ? localPct / globalPct : localPct * 10;
-          return { key, pct: Math.round(localPct * 100), lift };
-        })
-        .filter(f => f.pct >= 40)
-        .sort((a, b) => b.lift - a.lift)
-        .slice(0, 4)
-        .map(f => `${f.key}(${f.pct}%)`).join(', ') || 'no dominant attributes';
-
-      return { gid, algo: g.kind, size: g.members.length, density, features };
+    const allSummaries = l1Groups.map(([gid, g]) => {
+      const { featStr, fp, density } = _groupSummary(g);
+      return { gid, algo: g.kind, size: g.members.length, density, features: featStr, fp };
     });
+    const uncached = allSummaries.filter(s => !gInfo.get(s.gid)?.llmLabel);
+    if (!uncached.length) { _syncAiLabelBtn(); return; }
 
-    // Show a brief "generating" indicator in the note bar
-    const origNote = noteEl.textContent;
-    noteEl.textContent = origNote + ' · Generating AI labels…';
+    // Show progress UI, disable button while running
+    aiLabelBtn.disabled = true;
+    aiProgressWrap.style.display = 'flex';
+    aiProgressFill.style.width = '0%';
+    const total = uncached.length;
+    let done = 0;
+    aiProgressText.textContent = `Labeling 0 / ${total} groups…`;
 
     try {
-      const prompt = `Label each network group with a short semantic label (max 5 words, no quotes) and a one-sentence rationale. Respond ONLY as a JSON array: [{"gid":"...","label":"...","rationale":"..."}]\n\n` +
-        summaries.map(s => `gid=${s.gid} algo=${s.algo} size=${s.size} internal_density=${s.density}% distinguishing_attrs: ${s.features}`).join('\n');
+      for (let i = 0; i < uncached.length; i += _LLM_BATCH) {
+        const batch = uncached.slice(i, i + _LLM_BATCH);
+        const prompt =
+          `Label each network group with a short semantic label (max 5 words, no quotes) and a one-sentence rationale that references the relationship types where present. Respond ONLY as a JSON array: [{"gid":"...","label":"...","rationale":"..."}]\n\n` +
+          batch.map(s => `gid=${s.gid} algo=${s.algo} size=${s.size} internal_density=${s.density}% ${s.features}`).join('\n');
 
-      const res = await fetch(API_PROXY_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 900,
-          database: currentDatabase,
-          system: [{ type: 'text', text: 'You are a network visualization assistant. Generate concise semantic labels for network groups based on their structure and shared attributes. Labels should describe what the nodes have in common, not the algorithm name.' }],
-          messages: [{ role: 'user', content: prompt }]
-        })
-      });
+        const res = await fetch(API_PROXY_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: Math.min(4096, batch.length * 150 + 200),
+            database: currentDatabase,
+            system: [{ type: 'text', text: _LLM_SYSTEM }],
+            messages: [{ role: 'user', content: prompt }]
+          })
+        });
 
-      if (!res.ok) { noteEl.textContent = origNote; return; }
-      const data = await res.json();
-      const reply = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
-      const jsonMatch = reply.match(/\[[\s\S]*?\]/);
-      if (!jsonMatch) { noteEl.textContent = origNote; return; }
-
-      const labels = JSON.parse(jsonMatch[0]);
-      for (const { gid, label, rationale } of labels) {
-        if (gInfo.has(gid) && label) {
-          const g = gInfo.get(gid);
-          g.llmLabel = label;
-          g.llmRationale = rationale;
-          g.displayLabel = label;
+        if (res.ok) {
+          const data = await res.json();
+          const reply = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
+          const jsonMatch = reply.match(/\[[\s\S]*?\]/);
+          if (jsonMatch) {
+            const labels = JSON.parse(jsonMatch[0]);
+            for (const { gid, label, rationale } of labels) {
+              if (!gInfo.has(gid) || !label) continue;
+              const g = gInfo.get(gid);
+              g.llmLabel     = label;
+              g.llmRationale = rationale;
+              g.displayLabel = label;
+              const s = batch.find(u => u.gid === gid);
+              if (s) _saveCache(s.fp, label, rationale);
+              done++;
+            }
+          }
         }
-      }
 
-      noteEl.textContent = buildGroupingNote();
-      redrawHulls();
-      rerender(); // refresh labels inside group circles
-    } catch (_) {
-      noteEl.textContent = origNote; // silently restore on any error
-    }
+        // Refresh graph + progress after every batch so labels appear incrementally
+        const pct = Math.round(done / total * 100);
+        aiProgressFill.style.width = pct + '%';
+        aiProgressText.textContent = `Labeled ${done} / ${total} groups…`;
+        noteEl.textContent = buildGroupingNote();
+        redrawHulls();
+        rerender();
+      }
+    } catch (_) {}
+
+    // Final state
+    aiProgressFill.style.width = '100%';
+    aiProgressText.textContent = done > 0 ? `✓ ${done} of ${total} groups labeled` : 'No labels generated';
+    _syncAiLabelBtn();
+    noteEl.textContent = buildGroupingNote();
   }
 
   // ── Group profile panel helper ───────────────────────────────────────────
   function renderGroupProfile(gid) {
     const g = gInfo.get(gid);
     if (!g) return;
-    const nodeById = new Map(allNodes.map(n => [n.id, n]));
-    const memberNodes = g.members.map(id => nodeById.get(id)).filter(Boolean);
-    const SKIP = new Set(['id','name','label','size','value','color','x','y','z','fx','fy','index','vx','vy']);
+    const memberNodes = g.members.map(id => _nodeById.get(id)).filter(Boolean);
+    const SKIP = _GEN_SKIP;
 
     // Attribute distribution: field -> { value -> count }
     const attrDist = new Map();
@@ -1929,50 +2104,50 @@ function renderGraph(wrap, spec) {
     grpProfileSec.style.display = '';
   }
 
-  // ── Group tooltip helper ─────────────────────────────────────────────────
-  const TOOLTIP_ATTR_SKIP = new Set(['id','name','label','size','value','color','x','y','z','fx','fy','index','vx','vy']);
+  // ── Hovered-group sidebar content builder ───────────────────────────────
   function buildGroupTooltip(gid) {
     const g = gInfo.get(gid);
     if (!g) return '';
-    const nodeById = new Map(allNodes.map(n => [n.id, n]));
-    const memberNodes = g.members.map(id => nodeById.get(id)).filter(Boolean);
+    const memberNodes = g.members.map(id => _nodeById.get(id)).filter(Boolean);
 
-    // Structural rationale line per algorithm
-    const rationale = {
-      louvain:   'Louvain: nodes with high mutual edge density',
-      labelprop: 'Label Prop: majority-influence community',
-      kcore:     g.coreMin === 0 ? 'Periphery: low-connectivity nodes (k=0)'
-                 : g.coreMin === g.coreMax ? `k-${g.coreMin} shell: each node has ≥${g.coreMin} mutual connections`
-                 : `k-core shells ${g.coreMin}–${g.coreMax}`,
-      twin:      'Structural twins: identical neighbor signatures',
-      attribute: `Grouped by attribute: ${g.field}="${g.fieldValue}"`,
-      ipoctet:   `IP subnet: ${g.fieldValue || g.displayLabel}`,
-    }[g.kind] || g.kind;
+    const structLabel = ({
+      louvain:   'Louvain — mutual edge density',
+      labelprop: 'Label Prop — majority influence',
+      kcore:     g.coreMin === 0 ? 'Periphery (k=0)'
+                 : g.coreMin === g.coreMax ? `k-${g.coreMin} shell`
+                 : `k-cores ${g.coreMin}–${g.coreMax}`,
+      twin:      'Structural twins',
+      attribute: `Attr: ${g.field}="${g.fieldValue}"`,
+      ipoctet:   `Subnet: ${g.fieldValue || g.displayLabel}`,
+    })[g.kind] || g.kind;
 
-    const densityLine = (g.internalDensity != null)
-      ? `<br/><span style="color:#888">Internal edge density: ${g.internalDensity}%</span>` : '';
-    const llmLine = g.llmRationale
-      ? `<br/><i style="color:#555">${g.llmRationale}</i>` : '';
+    const densityStr = g.internalDensity != null ? ` · ${g.internalDensity}% internal` : '';
 
-    // Top shared attributes (≥50% of members share the value)
     const attrFreq = new Map();
     for (const n of memberNodes) {
       for (const [k, v] of Object.entries(n)) {
-        if (TOOLTIP_ATTR_SKIP.has(k) || v == null || v === '') continue;
+        if (_GEN_SKIP.has(k) || v == null || v === '') continue;
         const key = k + '=' + v;
         attrFreq.set(key, (attrFreq.get(key) || 0) + 1);
       }
     }
     const sharedAttrs = [...attrFreq.entries()]
       .filter(([, c]) => memberNodes.length > 0 && c / memberNodes.length >= 0.5)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 4)
+      .sort((a, b) => b[1] - a[1]).slice(0, 3)
       .map(([key, c]) => `${key} (${Math.round(c / memberNodes.length * 100)}%)`);
-    const attrLine = sharedAttrs.length
-      ? '<br/><span style="color:#444">Shared: ' + sharedAttrs.join(' · ') + '</span>' : '';
 
-    const memberPreview = g.members.slice(0, 6).join(', ') + (g.members.length > 6 ? ', …' : '');
-    return `<b>${g.displayLabel}</b><br/><i style="color:#666">${rationale}</i>${densityLine}${llmLine}${attrLine}<br/><span style="color:#aaa;font-size:10px">${memberPreview}</span><br/><i style="color:#888;font-size:10px">click to expand</i>`;
+    const memberPreview = g.members.slice(0, 4).join(', ') + (g.members.length > 4 ? ` +${g.members.length - 4} more` : '');
+    const actionHint = g.expanded ? 'click interior to collapse' : 'click to expand';
+
+    return [
+      `<div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:2px;word-break:break-word;">${g.displayLabel}</div>`,
+      `<div style="font-size:10px;color:var(--text3);margin-bottom:3px;">${g.kind} · ${g.members.length} nodes${densityStr}</div>`,
+      `<div style="font-size:10px;color:var(--text3);line-height:1.4;margin-bottom:4px;">${structLabel}</div>`,
+      g.llmRationale ? `<div style="font-size:10px;color:var(--text2);font-style:italic;line-height:1.4;margin-bottom:4px;padding:4px 6px;background:var(--bg3);border-radius:3px;">"${g.llmRationale}"</div>` : '',
+      sharedAttrs.length ? `<div style="font-size:10px;color:var(--text2);margin-bottom:4px;">${sharedAttrs.join('<br>')}</div>` : '',
+      `<div style="font-size:9.5px;color:var(--text3);margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${g.members.join(', ')}">${memberPreview}</div>`,
+      `<div style="font-size:9.5px;color:var(--accent);font-style:italic;">${actionHint}</div>`,
+    ].join('');
   }
 
   // D3-managed position store — persists across rerenders, never touched by ECharts
@@ -2001,14 +2176,16 @@ function renderGraph(wrap, spec) {
     posStore.clear();
     prevFilteredIds = new Set();
     grpProfileSec.style.display = 'none';   // clear stale profile on method change
-    hullTooltip.style.display = 'none';     // clear stale hull tooltip
-    lastHullTooltipGid = null;
+    hideGroupPanel();
     noteEl.textContent = buildGroupingNote();
     noteEl.style.display = (l1Count > 0 || l2Count > 0) ? '' : 'none';
     grpSec.style.display = (l1Count > 0 || l2Count > 0) ? '' : 'none';
+    // Reset progress bar state when switching methods
+    if (aiProgressWrap) { aiProgressWrap.style.display = 'none'; aiProgressFill.style.width = '0%'; aiProgressText.textContent = ''; }
     updateMethodButtons();
+    if (l1Count > 0) applyCachedLabels(); // sync: apply localStorage hits before first paint
+    _syncAiLabelBtn();
     rerender();
-    if (l1Count > 0) generateGroupLabels();
   }
   const titleOpt = spec.title ? { text: spec.title, top: 5, left: 'center', textStyle: { color: t.text, fontSize: 13 } } : undefined;
   const ROLE_COLOR = { both: '#2E9CDB', source: '#2E9CDB', dest: '#2E9CDB' };
@@ -2440,7 +2617,7 @@ function renderGraph(wrap, spec) {
             return p.data.name ? p.data.name + (p.data.value != null ? ' (' + p.data.value + ')' : '')
               : p.data.source + (directed ? ' → ' : ' — ') + p.data.target;
           }
-          if (p.data._isGroup) return buildGroupTooltip(p.data._gid);
+          if (p.data._isGroup) return ''; // panel driven by ec.on('mouseover')
           return p.name + (p.data._inGroup ? '<br/><i>click to collapse group</i>' : '');
         },
       },
@@ -2463,8 +2640,9 @@ function renderGraph(wrap, spec) {
   }
 
   updateMethodButtons();
+  if (l1Count > 0) applyCachedLabels(); // sync: apply localStorage hits before first paint
+  _syncAiLabelBtn();
   rerender();
-  if (l1Count > 0) generateGroupLabels();
 
   // Flag set synchronously by the ECharts node-click handler so the hull
   // click handler below knows to skip hull hit-testing for that click.
@@ -2475,6 +2653,7 @@ function renderGraph(wrap, spec) {
     const d = params.data;
     if (!d) return;
     ecClickHandled = true;
+    hideGroupPanel();
     if (d._isGroup) {
       renderGroupProfile(d._gid);
       const grp = gInfo.get(d._gid);
@@ -2502,7 +2681,7 @@ function renderGraph(wrap, spec) {
         : (circle && (x - circle.cx) ** 2 + (y - circle.cy) ** 2 <= circle.r ** 2);
       if (hit) {
         const g = gInfo.get(gid);
-        if (g) { g.expanded = false; rerender(); return; }
+        if (g) { hideGroupPanel(); g.expanded = false; rerender(); return; }
       }
     }
   });
@@ -3670,7 +3849,7 @@ const chartRegistry = {
   },
   graph: {
     render: renderGraph,
-    promptDescription: '- **graph** — network/relationship diagram with nodes and edges. Set `directed:true` for arrows (directed), omit or set `directed:false` for undirected. Optional `curved:true` for arc edges. Nodes support optional `size` (px) and `color` (hex string). Links support optional `label` (edge text), `color` (hex string, use this to color edges by category/type), and `value` (numeric weight — edge thickness is automatically scaled proportionally; always set this to the connection count or repeat count when available). Spec: { "type":"graph", "title":"...", "directed":true, "layout":"force", "nodes":[{"id":"1","name":"Node A"},{"id":"2","name":"Node B","size":50,"color":"#e05c5c"}], "links":[{"source":"1","target":"2","label":"DDoS","value":5,"color":"#e05c5c"}] }. Node ids in links must exactly match node id values. Use `layout:"circular"` for ring topology instead of force layout. When asked to color edges by type, assign a distinct hex color per type and set it on each link\'s `color` field. Render-side note: nodes sharing identical (partner, label) sets auto-collapse into a diamond ◆ "Group N (k)" node; degree-1 nodes sharing the same single partner auto-collapse into a "Leaves of <hub> (k)" node. Click ◆ to expand; click a red-bordered member to collapse. Legend swatches toggle category visibility.',
+    promptDescription: '- **graph** — network/relationship diagram with nodes and edges. **Always use lazy SQL** — never inline nodes/links for database-backed graphs. The SQL MUST aggregate rows with GROUP BY so each result row represents one unique (source, target, label) edge with its count; returning unaggregated rows (individual events) causes browser crashes on large tables. Set `directed:true` for arrows, omit for undirected. Optional `curved:true` for arc edges. Links support optional `label` (edge category/type), `color` (hex string — use to color edges by category), and `value` (numeric weight — always set to COUNT(*) or aggregate sum; edge thickness is scaled proportionally). Lazy SQL spec: { "type":"graph", "title":"...", "directed":true, "layout":"force", "sql":"SELECT src_ip AS source, dst_ip AS target, attack_type AS label, COUNT(*) AS value FROM events GROUP BY src_ip, dst_ip, attack_type ORDER BY value DESC" }. For IP-to-IP graphs on large tables, aggregate to /16 subnet level (e.g. `split_part(src_ip::text, \'.\', 1) || \'.\' || split_part(src_ip::text, \'.\', 2) || \'.0.0\'`) to keep the node count under ~300. Use `layout:"circular"` for ring topology instead of force layout. When asked to color edges by type, assign a distinct hex color per type and set it on each link\'s `color` field. Render-side note: nodes sharing identical (partner, label) sets auto-collapse into a diamond ◆ "Group N (k)" node; degree-1 nodes sharing the same single partner auto-collapse into a "Leaves of <hub> (k)" node. Click ◆ to expand; click a red-bordered member to collapse. Legend swatches toggle category visibility.',
   },
 
   lineup: {
@@ -3807,6 +3986,7 @@ function buildVisualizationPrompt() {
     '- Otherwise (analytical questions starting with "what", "why", "how", "which", "compare", or requests for insights/summaries), include a brief text explanation before or after the chart and offer 1-2 follow-up questions the user might want to explore next.\n' +
     '- Do NOT add a LIMIT clause to SQL queries unless the user explicitly requests one. Return all matching rows by default.\n' +
     '- Lazy data loading: for lineup, timearcs, timearcs-gl, graph, sankey, heatmap, box, violin, timeline, and swimlane charts — ALWAYS embed the SQL as `"sql":"SELECT..."` instead of an inline data array. The browser fetches all rows at render time. **Do NOT add a LIMIT clause** to lazy SQL specs. Use these standard column aliases: timearcs/timearcs-gl/graph/sankey → source, target, value, category; heatmap → x, y, value; box/violin → label, value; timeline → label, start, end, group; swimlane → time, actor, label, message, category (see swimlane prompt for full column list); lineup → exact column names from the SELECT list.\n' +
+    '- **graph SQL must always aggregate**: the SQL for a graph chart MUST use GROUP BY (source, target, and any label/category column) with COUNT(*) AS value. Never return individual event rows — each row must be one unique edge. For IP graphs on large tables, group by /16 subnet prefix to keep node count under ~300.\n' +
     '- For pricing analysis, use grouped bar (two datasets: List Price vs Avg Sale Price).\n' +
     '- Omit xLabel/yLabel for pie/doughnut/rose/funnel/sunburst/treemap charts.\n' +
     '- Round monetary values to 2 decimal places in the data array.';
@@ -3910,6 +4090,21 @@ function mergeRowsIntoSpec(spec, rows) {
     return undefined;
   };
   const type = spec.type;
+
+  // ── Network row budget ────────────────────────────────────────────────────
+  // Network renderers (force layout, WebGL arcs, Three.js) crash or lock up
+  // on large raw result sets. Trim to the highest-value edges before the
+  // type-specific conversion runs, so the O(n) work never touches all rows.
+  const NETWORK_ROW_CAPS = { graph: 3000, timearcs: 50000, 'timearcs-gl': 100000, dynet3d: 15000, timelighting: 15000 };
+  const netCap = NETWORK_ROW_CAPS[type];
+  if (netCap && rows.length > netCap) {
+    s._trimmedFrom = rows.length;
+    s._trimmedTo   = netCap;
+    rows = [...rows]
+      .sort((a, b) => (+(pick(b, 'value', 'count', 'cnt', 'weight') ?? 1)) - (+(pick(a, 'value', 'count', 'cnt', 'weight') ?? 1)))
+      .slice(0, netCap);
+  }
+
   if (type === 'timearcs' || type === 'timearcs-gl') {
     s.events = rows.map(r => ({
       year:     pick(r, 'year', 'Year', 'yr', 'time_bucket', 'bucket', 'period'),
@@ -4124,7 +4319,7 @@ function mergeRowsIntoSpec(spec, rows) {
   return s;
 }
 
-async function resolveNdjson(spec, res, onProgress) {
+async function collectNdjsonRows(res, onProgress) {
   const rows = [];
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
@@ -4135,15 +4330,14 @@ async function resolveNdjson(spec, res, onProgress) {
     if (streamDone) break;
     buffer += decoder.decode(value, { stream: true });
     const lines = buffer.split('\n');
-    buffer = lines.pop();   // keep any incomplete trailing line
+    buffer = lines.pop();
     for (const line of lines) {
       const trimmed = line.trim();
       if (!trimmed) continue;
       const obj = JSON.parse(trimmed);
       if (obj._error) throw new Error('Query error: ' + obj._error);
       if (obj._end) {
-        if (obj.truncated && onProgress)
-          onProgress(obj.row_count, true);
+        if (obj.truncated && onProgress) onProgress(obj.row_count, true);
         done = true;
         break;
       }
@@ -4151,11 +4345,15 @@ async function resolveNdjson(spec, res, onProgress) {
       if (onProgress && rows.length % 10000 === 0) onProgress(rows.length, false);
     }
   }
-  return mergeRowsIntoSpec(spec, rows);
+  return rows;
 }
 
-async function resolveChartSpec(spec, onProgress) {
-  if (!spec.sql) return spec;
+async function resolveNdjson(spec, res, onProgress) {
+  return mergeRowsIntoSpec(spec, await collectNdjsonRows(res, onProgress));
+}
+
+async function fetchRawRows(spec, onProgress) {
+  if (!spec.sql) return [];
   const base = API_PROXY_URL.replace('/messages', '');
   const res = await fetch(base + '/query', {
     method: 'POST',
@@ -4164,11 +4362,159 @@ async function resolveChartSpec(spec, onProgress) {
   });
   if (!res.ok) throw new Error('Query fetch failed: HTTP ' + res.status);
   const ct = res.headers.get('Content-Type') || '';
-  if (ct.includes('x-ndjson')) return resolveNdjson(spec, res, onProgress);
-  // Fallback: old buffered JSON path (proxy without streaming support)
+  if (ct.includes('x-ndjson')) return collectNdjsonRows(res, onProgress);
   const result = await res.json();
   if (result.error) throw new Error('Query error: ' + result.error);
-  return mergeRowsIntoSpec(spec, result.rows || []);
+  return result.rows || [];
+}
+
+async function resolveChartSpec(spec, onProgress, prefetchedRows) {
+  if (!spec.sql) return spec;
+  const rows = prefetchedRows ?? await fetchRawRows(spec, onProgress);
+  return mergeRowsIntoSpec(spec, rows);
+}
+
+// ── Drilldown helpers for graph / timearcs ────────────────────────────────────
+
+function ip16(addr) {
+  const p = String(addr ?? '').split('.');
+  return p.length >= 4 ? `${p[0]}.${p[1]}.0.0` : String(addr ?? '');
+}
+
+function detectGroupKey(rows) {
+  if (!rows.length) return null;
+  const sample = rows[0];
+  const CAT_COLS = ['label', 'category', 'type', 'attack_type', 'event_type', 'event_class', 'class', 'action'];
+  for (const col of CAT_COLS) {
+    if (sample[col] == null) continue;
+    const vals = new Set();
+    for (const r of rows) { const v = r[col]; if (v != null) vals.add(String(v)); }
+    if (vals.size >= 2 && vals.size <= 30)
+      return { key: col, type: 'category', values: [...vals].sort() };
+  }
+  // Fall back to /16 IP prefix on source column
+  const SRC_COLS = ['source', 'src', 'source_ip', 'src_ip'];
+  const srcCol = SRC_COLS.find(c => sample[c] != null);
+  if (srcCol && /^\d{1,3}\.\d{1,3}\./.test(String(sample[srcCol] ?? ''))) {
+    const pfxs = new Set(rows.slice(0, 10000).map(r => ip16(r[srcCol])));
+    if (pfxs.size >= 2 && pfxs.size <= 100)
+      return { key: srcCol, type: 'ip16', values: [...pfxs].sort() };
+  }
+  return null;
+}
+
+function aggregateNetworkRows(rows, spec, groupKey, activeFilter) {
+  const CAP = spec.type === 'graph' ? 3000 : 50000;
+  let filtered = (activeFilter != null && groupKey.type === 'category')
+    ? rows.filter(r => String(r[groupKey.key] ?? '') === activeFilter)
+    : rows;
+  if (filtered.length <= CAP) return filtered;
+
+  const sample = filtered[0] || {};
+  const SRC_COLS = ['source', 'src', 'source_ip', 'src_ip'];
+  const TGT_COLS = ['target', 'destination', 'dst', 'dest', 'dst_ip'];
+  const TIME_COLS = ['year', 'yr', 'time_bucket', 'bucket', 'period', 'time', 'date', 'day', 'month'];
+  const VAL_COLS  = ['value', 'count', 'cnt', 'weight'];
+  const srcCol = SRC_COLS.find(c => sample[c] != null);
+  const tgtCol = TGT_COLS.find(c => sample[c] != null);
+  const timeCol = TIME_COLS.find(c => sample[c] != null);
+  const valCol  = VAL_COLS.find(c => sample[c] != null) || 'value';
+  const catCol  = groupKey.type === 'category' ? groupKey.key : null;
+  const srcIsIp = srcCol && /^\d{1,3}\.\d{1,3}\./.test(String(sample[srcCol] ?? ''));
+
+  if (!srcIsIp) {
+    // Can't aggregate by IP — top-N by value
+    return [...filtered].sort((a, b) => (+(b[valCol] ?? 1)) - (+(a[valCol] ?? 1))).slice(0, CAP);
+  }
+
+  const agg = new Map();
+  for (const r of filtered) {
+    const src = ip16(r[srcCol]);
+    const tgt = tgtCol ? ip16(r[tgtCol]) : '';
+    const t   = timeCol ? String(r[timeCol] ?? '') : '';
+    const cat = catCol  ? String(r[catCol]  ?? '') : '';
+    const key = [src, tgt, t, cat].join('\x00');
+    const val = +(r[valCol] ?? 1);
+    if (agg.has(key)) { agg.get(key)[valCol] += val; }
+    else {
+      const row = { [valCol]: val };
+      if (srcCol)  row[srcCol]  = src;
+      if (tgtCol)  row[tgtCol]  = tgt;
+      if (timeCol) row[timeCol] = t;
+      if (catCol)  row[catCol]  = cat;
+      agg.set(key, row);
+    }
+  }
+  let result = [...agg.values()];
+  if (result.length > CAP)
+    result = result.sort((a, b) => (+(b[valCol] ?? 1)) - (+(a[valCol] ?? 1))).slice(0, CAP);
+  return result;
+}
+
+function initDrilldownChart(frame, wrap, rawSpec, rows, groupKey) {
+  // Count rows per group value for chip badges
+  const countByGroup = new Map();
+  for (const r of rows) {
+    const v = String(r[groupKey.key] ?? '');
+    countByGroup.set(v, (countByGroup.get(v) || 0) + 1);
+  }
+
+  // Panel lives in .chart-frame (outside .chart-wrap) so re-renders don't destroy it
+  const panel = document.createElement('div');
+  panel.className = 'chart-group-panel';
+  frame.insertBefore(panel, wrap);
+
+  const dimLabel = groupKey.key.replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase());
+  const labelEl = document.createElement('span');
+  labelEl.className = 'chart-group-label';
+  labelEl.textContent = dimLabel + ':';
+  panel.appendChild(labelEl);
+
+  const renderForFilter = filter => {
+    panel.querySelectorAll('.chart-group-chip').forEach(c => {
+      c.classList.toggle('active', c.dataset.group === (filter ?? ''));
+    });
+    // Dispose existing ECharts instances before clearing wrap
+    wrap.querySelectorAll('*').forEach(el => {
+      const ec = typeof echarts !== 'undefined' && echarts.getInstanceByDom?.(el);
+      if (ec) ec.dispose();
+    });
+    const filteredRows = aggregateNetworkRows(rows, rawSpec, groupKey, filter);
+    let spec = mergeRowsIntoSpec(rawSpec, filteredRows);
+    if (spec.type === 'timearcs' && spec.events && spec.events.length > 5000) spec.type = 'timearcs-gl';
+    const entry = chartRegistry[spec.type];
+    if (!entry) return;
+    wrap.style.cssText = '';
+    wrap.textContent = '';
+    entry.render(wrap, spec);
+    if (filteredRows.length < rows.length) {
+      const banner = document.createElement('div');
+      banner.className = 'chart-trim-banner';
+      const filterStr = filter != null ? ` · ${filter}` : '';
+      banner.textContent = `Showing ${filteredRows.length.toLocaleString()} aggregated of ${rows.length.toLocaleString()} total connections${filterStr}. Click a chip to filter.`;
+      wrap.prepend(banner);
+    }
+  };
+
+  // "All" chip
+  const allChip = document.createElement('button');
+  allChip.className = 'chart-group-chip active';
+  allChip.dataset.group = '';
+  allChip.textContent = `All (${rows.length.toLocaleString()})`;
+  allChip.onclick = () => renderForFilter(null);
+  panel.appendChild(allChip);
+
+  // One chip per group value
+  for (const val of groupKey.values) {
+    const chip = document.createElement('button');
+    chip.className = 'chart-group-chip';
+    chip.dataset.group = val;
+    chip.textContent = `${val} (${(countByGroup.get(val) || 0).toLocaleString()})`;
+    chip.onclick = () => renderForFilter(val);
+    panel.appendChild(chip);
+  }
+
+  renderForFilter(null); // initial render
 }
 
 // ── Chart initialiser — uses registry to dispatch to the right renderer ─────
@@ -4197,13 +4543,45 @@ function initCharts(container) {
           if (rowsEl) rowsEl.textContent = n.toLocaleString() + (truncated ? ' rows (truncated)' : ' rows received');
           if (truncated && statusEl) statusEl.textContent = 'Add more aggregation to reduce data size';
         } : null;
-        const spec = await resolveChartSpec(rawSpec, onProgress);
+        // ── Drilldown intercept for graph / timearcs ─────────────────────
+        const DRILLDOWN_CAPS = { graph: 3000, timearcs: 50000, 'timearcs-gl': 100000 };
+        const drillCap = rawSpec.sql ? DRILLDOWN_CAPS[rawSpec.type] : 0;
+        let prefetchedRows = null;
+        if (drillCap) {
+          prefetchedRows = await fetchRawRows(rawSpec, onProgress);
+          if (prefetchedRows.length > drillCap) {
+            const groupKey = detectGroupKey(prefetchedRows);
+            if (groupKey) {
+              wrap.style.cssText = '';
+              wrap.textContent = '';
+              initDrilldownChart(frame, wrap, rawSpec, prefetchedRows, groupKey);
+              const ddAnchor = document.createElement('div');
+              ddAnchor.className = 'chart-expand-anchor';
+              const ddBtn = document.createElement('button');
+              ddBtn.className = 'chart-expand-btn';
+              ddBtn.title = 'View enlarged';
+              ddBtn.innerHTML = '<svg viewBox="0 0 16 16"><path d="M10 2h4v4M14 2l-6 6M6 14H2v-4M2 14l6-6"/></svg>';
+              ddBtn.onclick = () => openChartModal(rawSpec);
+              ddAnchor.appendChild(ddBtn);
+              frame.insertBefore(ddAnchor, frame.firstChild);
+              return;
+            }
+          }
+        }
+        // ── Normal render path ────────────────────────────────────────────
+        const spec = await resolveChartSpec(rawSpec, onProgress, prefetchedRows);
         if (spec.type === 'timearcs' && spec.events && spec.events.length > 5000) spec.type = 'timearcs-gl';
         const entry = chartRegistry[spec.type];
         if (!entry) throw new Error('Unknown chart type: "' + spec.type + '"');
         wrap.style.cssText = '';
         wrap.textContent = '';
         entry.render(wrap, spec);
+        if (spec._trimmedFrom) {
+          const banner = document.createElement('div');
+          banner.className = 'chart-trim-banner';
+          banner.textContent = `Showing top ${spec._trimmedTo.toLocaleString()} of ${spec._trimmedFrom.toLocaleString()} connections by volume. Refine the query with subnet aggregation or a HAVING COUNT(*) > N filter to show more specific data.`;
+          wrap.prepend(banner);
+        }
         const anchor = document.createElement('div');
         anchor.className = 'chart-expand-anchor';
         const btn = document.createElement('button');

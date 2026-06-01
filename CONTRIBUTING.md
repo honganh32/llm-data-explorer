@@ -4,7 +4,52 @@ Chart plugins are single JSON files in `chart_plugins/`. Adding a new chart type
 
 ---
 
-## Prerequisites
+## Quick start: use an AI chatbot (recommended)
+
+If you have access to any AI chatbot (ChatGPT, Claude, Gemini, etc.) you can generate a complete plugin from your existing visualization code in minutes — no knowledge of the plugin format required.
+
+**Step 1 — Generate the prompt:**
+
+```bash
+# From a local file
+python scripts/make_prompt.py my_chart.js
+
+# From a GitHub repo (script auto-selects relevant files)
+python scripts/make_prompt.py https://github.com/user/repo
+
+# From a single file on GitHub
+python scripts/make_prompt.py https://github.com/user/repo/blob/main/src/chart.js
+```
+
+This fetches the source and produces a ready-to-paste prompt. The prompt is printed to the terminal and also saved to `scripts/_last_prompt.txt`.
+
+> If your source is a snippet rather than a file, run the script with no arguments and paste your code interactively (end with Ctrl+D on macOS/Linux, Ctrl+Z + Enter on Windows).
+
+When given a GitHub repo URL the script automatically filters out `node_modules`, build artifacts, config files, and oversized bundles — only the visualization source files are included. Files are ranked by relevance (source directories, visualization-related names, reasonable size) and fetching stops once roughly 80 KB of source is collected.
+
+**Step 2 — Paste into a chatbot:**
+
+Copy the prompt into ChatGPT, Claude, Gemini, or any AI chat. The AI will return a complete plugin JSON.
+
+**Step 3 — Save and strip fences:**
+
+Save the JSON response as `chart_plugins/<type>.json` (the `type` field in the JSON tells you the filename). If the AI wrapped its output in ` ``` ` code fences, remove those before saving.
+
+**Step 4 — Validate:**
+
+```bash
+python mcp_server/validate_plugin.py chart_plugins/<type>.json
+```
+
+Fix any errors the validator reports (most are small formatting issues the AI occasionally misses), then skip to [Test locally](#step-4-test-locally) below.
+
+---
+
+## Manual path: fill in the template yourself
+
+Use this if you prefer to write the plugin by hand or want full control.
+
+### Prerequisites
 
 - Python 3.8+ (for running the server and validator)
 - `pip install fastmcp`
@@ -89,6 +134,7 @@ Fix any errors reported before proceeding.
 
 ---
 
+<a name="step-4-test-locally"></a>
 ## Step 4: Test locally
 
 Start the MCP server:
