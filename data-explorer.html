@@ -731,6 +731,15 @@ function louvainCommunities(nodes, links) {
   return community;
 }
 
+// Compute % of edges that are internal to a group (directed: max = n*(n-1))
+function computeGroupInternalDensity(members, links) {
+  if (members.length < 2) return 0;
+  const mset = new Set(members);
+  const internal = links.filter(l => mset.has(l.source) && mset.has(l.target)).length;
+  const maxEdges = members.length * (members.length - 1);
+  return maxEdges > 0 ? Math.round(internal / maxEdges * 100) : 0;
+}
+
 // ── Method A: multi-level attribute grouping ─────────────────────────────────
 // Uses each qualifying attribute field (ascending cardinality) as a successive
 // nesting level. L2 nodes are scoped within each L1 group, L3 within L2, etc.
@@ -823,7 +832,10 @@ function buildLouvainGroups(allNodes, links, COLORS) {
     gIdx++;
     const gid = '__l1_' + gIdx;
     const color = COLORS[colorIdx++ % COLORS.length];
-    gInfo.set(gid, { kind: 'louvain', level: 1, members, subGroups: [], parentGid: null, expanded: false, displayLabel: 'Community ' + colorIdx, color, communityNum: colorIdx });
+    const density = computeGroupInternalDensity(members, links);
+    const baseLabel = 'Community ' + colorIdx;
+    const displayLabel = baseLabel + ' · ' + members.length + ' nodes · ' + density + '% internal';
+    gInfo.set(gid, { kind: 'louvain', level: 1, members, subGroups: [], parentGid: null, expanded: false, displayLabel, baseLabel, internalDensity: density, color, communityNum: colorIdx });
     l1Colors.set(gid, color);
     members.forEach(id => idToL1Gid.set(id, gid));
   }
@@ -924,11 +936,12 @@ function buildKCoreGroups(allNodes, links, COLORS) {
     gIdx++;
     const gid = '__kcore_' + gIdx;
     const color = COLORS[idx % COLORS.length];
-    const label = bg.coreMin === 0 ? 'Periphery (k=0)'
+    const baseLabel = bg.coreMin === 0 ? 'Periphery (k=0)'
       : bg.coreMin === maxCore ? `Core (k=${maxCore})`
       : bg.coreMin === bg.coreMax ? `Shell k=${bg.coreMin}`
       : `Shells k=${bg.coreMin}–${bg.coreMax}`;
-    gInfo.set(gid, { kind: 'kcore', level: 1, members: bg.members, subGroups: [], parentGid: null, expanded: false, displayLabel: label, color });
+    const displayLabel = baseLabel + ' · ' + bg.members.length + ' nodes';
+    gInfo.set(gid, { kind: 'kcore', level: 1, members: bg.members, subGroups: [], parentGid: null, expanded: false, displayLabel, baseLabel, coreMin: bg.coreMin, coreMax: bg.coreMax, color });
     l1Colors.set(gid, color);
     bg.members.forEach(id => idToL1Gid.set(id, gid));
   });
@@ -984,7 +997,10 @@ function buildLabelPropGroups(allNodes, links, COLORS) {
     const gid = '__lp_' + gIdx;
     const color = COLORS[colorIdx % COLORS.length];
     colorIdx++;
-    gInfo.set(gid, { kind: 'labelprop', level: 1, members, subGroups: [], parentGid: null, expanded: false, displayLabel: 'LP Community ' + colorIdx, color, communityNum: colorIdx });
+    const density = computeGroupInternalDensity(members, links);
+    const baseLabel = 'LP Community ' + colorIdx;
+    const displayLabel = baseLabel + ' · ' + members.length + ' nodes · ' + density + '% internal';
+    gInfo.set(gid, { kind: 'labelprop', level: 1, members, subGroups: [], parentGid: null, expanded: false, displayLabel, baseLabel, internalDensity: density, color, communityNum: colorIdx });
     l1Colors.set(gid, color);
     members.forEach(id => idToL1Gid.set(id, gid));
   }
@@ -1251,17 +1267,21 @@ function renderGraph(wrap, spec) {
   // Grouping method toggle
   const grpMethodSec = mkPanelSection('Grouping');
   [
-    { id: 'auto',      label: 'Auto (default)' },
-    { id: 'attribute', label: 'Attribute'       },
-    { id: 'louvain',   label: 'Louvain'         },
-    { id: 'kcore',     label: 'k-Core shells'   },
-    { id: 'labelprop', label: 'Label Prop'      },
-    { id: 'ipoctet',   label: 'IP Octets'       },
-  ].forEach(({ id, label }) => {
+    { id: 'auto',      label: 'Auto (default)', desc: 'Best method for your data'             },
+    { id: 'attribute', label: 'Attribute',       desc: 'Groups by shared node attributes'     },
+    { id: 'louvain',   label: 'Louvain',         desc: 'Nodes with dense internal connections'},
+    { id: 'kcore',     label: 'k-Core shells',   desc: 'Layers from periphery to core'        },
+    { id: 'labelprop', label: 'Label Prop',      desc: 'Majority-influence communities'       },
+    { id: 'ipoctet',   label: 'IP Octets',       desc: 'Hierarchical IP prefix grouping'      },
+  ].forEach(({ id, label, desc }) => {
     const b = mkBtn(label);
     b.onclick = () => applyGrouping(id);
     methodBtns.set(id, b);
     grpMethodSec.appendChild(b);
+    const descEl = document.createElement('div');
+    descEl.style.cssText = 'font-size:9.5px;color:var(--text3,#999);margin:-2px 0 5px 1px;line-height:1.3;';
+    descEl.textContent = desc;
+    grpMethodSec.appendChild(descEl);
   });
   ctrlPanel.appendChild(grpMethodSec);
 
@@ -1458,6 +1478,14 @@ function renderGraph(wrap, spec) {
   grpSec.style.display = (l1Count > 0 || l2Count > 0) ? '' : 'none';
   ctrlPanel.appendChild(grpSec);
 
+  // Group Profile panel — shown when a group node is clicked
+  const grpProfileSec = mkPanelSection('Group Profile');
+  grpProfileSec.style.display = 'none';
+  const grpProfileContent = document.createElement('div');
+  grpProfileContent.style.cssText = 'font-size:11px;';
+  grpProfileSec.appendChild(grpProfileContent);
+  ctrlPanel.appendChild(grpProfileSec);
+
   // Categories section
   if (categories.length > 1) {
     const catSec = mkPanelSection('Categories');
@@ -1588,6 +1616,10 @@ function renderGraph(wrap, spec) {
 
       const color = g.color || '#2E9CDB';
       const isOuter = (g.level || 1) === 1;
+      // Dim groups that are not hovered (or children of hovered). Hovered group and its children stay bright.
+      const isHovered = hoveredGroupGid !== null && (gid === hoveredGroupGid || g.parentGid === hoveredGroupGid);
+      const dim = hoveredGroupGid !== null && !isHovered;
+      const dimFactor = dim ? 0.2 : 1;
 
       let poly;
       if (pts.length < 3) {
@@ -1597,25 +1629,27 @@ function renderGraph(wrap, spec) {
         ctx.save();
         ctx.beginPath();
         ctx.arc(cx, cy, PAD + 18, 0, Math.PI * 2);
-        ctx.fillStyle   = hexToRgba(color, isOuter ? 0.08 : 0.13);
-        ctx.strokeStyle = hexToRgba(color, isOuter ? 0.40 : 0.60);
+        ctx.fillStyle   = hexToRgba(color, (isOuter ? 0.08 : 0.13) * dimFactor);
+        ctx.strokeStyle = hexToRgba(color, (isOuter ? 0.40 : 0.60) * dimFactor);
         ctx.lineWidth   = isOuter ? 2 : 1.5;
         if (!isOuter) ctx.setLineDash([5, 3]);
         ctx.fill();
         ctx.stroke();
         ctx.restore();
 
-        ctx.save();
-        ctx.font = `bold ${isOuter ? 11 : 10}px sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        const lbl = g.displayLabel;
-        const tm  = ctx.measureText(lbl);
-        ctx.fillStyle = 'rgba(255,255,255,0.78)';
-        ctx.fillRect(cx - tm.width / 2 - 3, cy - PAD - 28, tm.width + 6, 15);
-        ctx.fillStyle = color;
-        ctx.fillText(lbl, cx, cy - PAD - 21);
-        ctx.restore();
+        if (!dim) {
+          ctx.save();
+          ctx.font = `bold ${isOuter ? 11 : 10}px sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          const lbl = g.displayLabel;
+          const tm  = ctx.measureText(lbl);
+          ctx.fillStyle = 'rgba(255,255,255,0.78)';
+          ctx.fillRect(cx - tm.width / 2 - 3, cy - PAD - 28, tm.width + 6, 15);
+          ctx.fillStyle = color;
+          ctx.fillText(lbl, cx, cy - PAD - 21);
+          ctx.restore();
+        }
         hullPolys.push({ gid, poly: null, circle: { cx, cy, r: PAD + 18 } });
         continue;
       }
@@ -1638,27 +1672,29 @@ function renderGraph(wrap, spec) {
       ctx.moveTo(poly[0][0], poly[0][1]);
       for (let i = 1; i < poly.length; i++) ctx.lineTo(poly[i][0], poly[i][1]);
       ctx.closePath();
-      ctx.fillStyle   = hexToRgba(color, isOuter ? 0.08 : 0.13);
-      ctx.strokeStyle = hexToRgba(color, isOuter ? 0.40 : 0.60);
+      ctx.fillStyle   = hexToRgba(color, (isOuter ? 0.08 : 0.13) * dimFactor);
+      ctx.strokeStyle = hexToRgba(color, (isOuter ? 0.40 : 0.60) * dimFactor);
       ctx.lineWidth   = isOuter ? 2 : 1.5;
       if (!isOuter) ctx.setLineDash([5, 3]);
       ctx.fill();
       ctx.stroke();
       ctx.restore();
 
-      // Label just above the topmost hull vertex.
-      const topY = Math.min(...poly.map(p => p[1]));
-      ctx.save();
-      ctx.font = `bold ${isOuter ? 11 : 10}px sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      const lbl = g.displayLabel;
-      const tm  = ctx.measureText(lbl);
-      ctx.fillStyle = 'rgba(255,255,255,0.78)';
-      ctx.fillRect(cx - tm.width / 2 - 3, topY - 18, tm.width + 6, 15);
-      ctx.fillStyle = color;
-      ctx.fillText(lbl, cx, topY - 11);
-      ctx.restore();
+      // Label just above the topmost hull vertex (hidden when group is dimmed).
+      if (!dim) {
+        const topY = Math.min(...poly.map(p => p[1]));
+        ctx.save();
+        ctx.font = `bold ${isOuter ? 11 : 10}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const lbl = g.displayLabel;
+        const tm  = ctx.measureText(lbl);
+        ctx.fillStyle = 'rgba(255,255,255,0.78)';
+        ctx.fillRect(cx - tm.width / 2 - 3, topY - 18, tm.width + 6, 15);
+        ctx.fillStyle = color;
+        ctx.fillText(lbl, cx, topY - 11);
+        ctx.restore();
+      }
       hullPolys.push({ gid, poly });
     }
   }
@@ -1670,9 +1706,274 @@ function renderGraph(wrap, spec) {
     if (_hullRaf) cancelAnimationFrame(_hullRaf);
     _hullRaf = requestAnimationFrame(() => { _hullRaf = null; redrawHulls(); });
   });
+
+  // Hull tooltip — fixed-position overlay that follows the cursor.
+  // Created once per renderGraph call; appended to body so it escapes any
+  // overflow:hidden containers. Cleaned up when the chart area is left.
+  const hullTooltip = document.createElement('div');
+  hullTooltip.style.cssText = 'position:fixed;z-index:9999;background:#fff;border:1px solid #e0e0e0;border-radius:5px;padding:8px 10px;font-size:12px;pointer-events:none;display:none;max-width:300px;box-shadow:0 3px 10px rgba(0,0,0,0.13);line-height:1.5;font-family:inherit;color:#333;';
+  document.body.appendChild(hullTooltip);
+  let lastHullTooltipGid = null;
+
+  // Track when ECharts is showing its own node tooltip so we suppress ours.
+  let ecNodeHovered = false;
+  ec.on('mouseover', p => { if (p.dataType === 'node') ecNodeHovered = true; });
+  ec.on('mouseout',  p => { if (p.dataType === 'node') { ecNodeHovered = false; } });
+
+  // hullCanvas has pointer-events:none, so mouse events fall through to chartDiv.
+  // We do all hull hit-testing here — hover highlight AND tooltip in one handler.
+  chartDiv.addEventListener('mousemove', e => {
+    const rect = chartDiv.getBoundingClientRect();
+    const x = e.clientX - rect.left, y = e.clientY - rect.top;
+
+    let foundGid = null;
+    for (let i = hullPolys.length - 1; i >= 0; i--) {
+      const { gid, poly, circle } = hullPolys[i];
+      const g = gInfo.get(gid);
+      if (!g || g.level !== 1) continue;
+      const hit = poly
+        ? d3.polygonContains(poly, [x, y])
+        : (circle && (x - circle.cx) ** 2 + (y - circle.cy) ** 2 <= circle.r ** 2);
+      if (hit) { foundGid = gid; break; }
+    }
+
+    // ── Hover highlight (dimming of non-hovered groups) ──────────────────
+    if (foundGid !== hoveredGroupGid) {
+      hoveredGroupGid = foundGid;
+      chartDiv.style.cursor = foundGid ? 'pointer' : '';
+      redrawHulls();
+    }
+
+    // ── Hull tooltip for expanded groups ─────────────────────────────────
+    // Collapsed groups use ECharts' own tooltip; expanded hulls have no node
+    // to hover, so we render a custom tooltip over the polygon interior.
+    const g = foundGid ? gInfo.get(foundGid) : null;
+    if (g && g.expanded && !ecNodeHovered) {
+      if (foundGid !== lastHullTooltipGid) {
+        hullTooltip.innerHTML = buildGroupTooltip(foundGid);
+        lastHullTooltipGid = foundGid;
+      }
+      hullTooltip.style.display = '';
+      // Clamp to viewport: prefer right-of-cursor, fall back to left if needed.
+      const tw = 310, th = 170;
+      const vw = window.innerWidth, vh = window.innerHeight;
+      let tx = e.clientX + 14, ty = e.clientY - 20;
+      if (tx + tw > vw) tx = e.clientX - tw - 14;
+      if (ty + th > vh) ty = vh - th - 10;
+      if (ty < 0) ty = 10;
+      hullTooltip.style.left = tx + 'px';
+      hullTooltip.style.top  = ty + 'px';
+    } else {
+      hullTooltip.style.display = 'none';
+      lastHullTooltipGid = null;
+    }
+  });
+
+  chartDiv.addEventListener('mouseleave', () => {
+    if (hoveredGroupGid !== null) { hoveredGroupGid = null; redrawHulls(); }
+    hullTooltip.style.display = 'none';
+    lastHullTooltipGid = null;
+  });
   // ── End hull overlay ─────────────────────────────────────────────────────
 
   const directed = !!spec.directed;
+
+  // ── LLM group label generation ───────────────────────────────────────────
+  // Fires a single batched call for all L1 groups using aggregated stats only
+  // (O(groups × attrs) tokens, not O(nodes × attrs)).
+  async function generateGroupLabels() {
+    const l1Groups = [...gInfo.entries()].filter(([, g]) => g.level === 1);
+    if (!l1Groups.length) return;
+
+    const GEN_SKIP = new Set(['id','name','label','size','value','color','x','y','z','fx','fy','index','vx','vy']);
+    const nodeById = new Map(allNodes.map(n => [n.id, n]));
+
+    // Global attribute frequencies — used to compute lift scores per group
+    const globalFreq = new Map();
+    for (const n of allNodes) {
+      for (const [k, v] of Object.entries(n)) {
+        if (GEN_SKIP.has(k) || v == null || v === '') continue;
+        const key = k + '=' + v;
+        globalFreq.set(key, (globalFreq.get(key) || 0) + 1);
+      }
+    }
+
+    const summaries = l1Groups.map(([gid, g]) => {
+      const memberNodes = g.members.map(id => nodeById.get(id)).filter(Boolean);
+      const density = g.internalDensity != null ? g.internalDensity
+        : computeGroupInternalDensity(g.members, links);
+
+      // Attribute lift: how much more common is each value here vs. globally?
+      const attrFreq = new Map();
+      for (const n of memberNodes) {
+        for (const [k, v] of Object.entries(n)) {
+          if (GEN_SKIP.has(k) || v == null || v === '') continue;
+          const key = k + '=' + v;
+          attrFreq.set(key, (attrFreq.get(key) || 0) + 1);
+        }
+      }
+      const features = [...attrFreq.entries()]
+        .map(([key, count]) => {
+          const localPct = count / Math.max(1, memberNodes.length);
+          const globalPct = (globalFreq.get(key) || 0) / Math.max(1, allNodes.length);
+          const lift = globalPct > 0 ? localPct / globalPct : localPct * 10;
+          return { key, pct: Math.round(localPct * 100), lift };
+        })
+        .filter(f => f.pct >= 40)
+        .sort((a, b) => b.lift - a.lift)
+        .slice(0, 4)
+        .map(f => `${f.key}(${f.pct}%)`).join(', ') || 'no dominant attributes';
+
+      return { gid, algo: g.kind, size: g.members.length, density, features };
+    });
+
+    // Show a brief "generating" indicator in the note bar
+    const origNote = noteEl.textContent;
+    noteEl.textContent = origNote + ' · Generating AI labels…';
+
+    try {
+      const prompt = `Label each network group with a short semantic label (max 5 words, no quotes) and a one-sentence rationale. Respond ONLY as a JSON array: [{"gid":"...","label":"...","rationale":"..."}]\n\n` +
+        summaries.map(s => `gid=${s.gid} algo=${s.algo} size=${s.size} internal_density=${s.density}% distinguishing_attrs: ${s.features}`).join('\n');
+
+      const res = await fetch(API_PROXY_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 900,
+          database: currentDatabase,
+          system: [{ type: 'text', text: 'You are a network visualization assistant. Generate concise semantic labels for network groups based on their structure and shared attributes. Labels should describe what the nodes have in common, not the algorithm name.' }],
+          messages: [{ role: 'user', content: prompt }]
+        })
+      });
+
+      if (!res.ok) { noteEl.textContent = origNote; return; }
+      const data = await res.json();
+      const reply = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
+      const jsonMatch = reply.match(/\[[\s\S]*?\]/);
+      if (!jsonMatch) { noteEl.textContent = origNote; return; }
+
+      const labels = JSON.parse(jsonMatch[0]);
+      for (const { gid, label, rationale } of labels) {
+        if (gInfo.has(gid) && label) {
+          const g = gInfo.get(gid);
+          g.llmLabel = label;
+          g.llmRationale = rationale;
+          g.displayLabel = label;
+        }
+      }
+
+      noteEl.textContent = buildGroupingNote();
+      redrawHulls();
+      rerender(); // refresh labels inside group circles
+    } catch (_) {
+      noteEl.textContent = origNote; // silently restore on any error
+    }
+  }
+
+  // ── Group profile panel helper ───────────────────────────────────────────
+  function renderGroupProfile(gid) {
+    const g = gInfo.get(gid);
+    if (!g) return;
+    const nodeById = new Map(allNodes.map(n => [n.id, n]));
+    const memberNodes = g.members.map(id => nodeById.get(id)).filter(Boolean);
+    const SKIP = new Set(['id','name','label','size','value','color','x','y','z','fx','fy','index','vx','vy']);
+
+    // Attribute distribution: field -> { value -> count }
+    const attrDist = new Map();
+    for (const n of memberNodes) {
+      for (const [k, v] of Object.entries(n)) {
+        if (SKIP.has(k) || v == null || v === '') continue;
+        if (!attrDist.has(k)) attrDist.set(k, new Map());
+        const s = String(v);
+        attrDist.get(k).set(s, (attrDist.get(k).get(s) || 0) + 1);
+      }
+    }
+    // Keep only categorical attributes (2–10 distinct values)
+    const catAttrs = [...attrDist.entries()]
+      .filter(([, vm]) => vm.size >= 2 && vm.size <= 10)
+      .sort((a, b) => a[0].localeCompare(b[0]));
+
+    const mset = new Set(g.members);
+    const density = g.internalDensity != null ? g.internalDensity
+      : computeGroupInternalDensity(g.members, links);
+
+    let html = `<div style="font-weight:600;color:${g.color};margin-bottom:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${g.displayLabel}">${g.displayLabel}</div>`;
+    html += `<div style="color:var(--text2,#666);margin-bottom:4px;">${g.members.length} nodes · ${density}% internal edges</div>`;
+    if (g.llmRationale) {
+      html += `<div style="font-style:italic;color:var(--text,#333);margin-bottom:6px;line-height:1.4;">"${g.llmRationale}"</div>`;
+    }
+    if (catAttrs.length > 0) {
+      html += `<div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--text3,#999);margin-bottom:4px;">Attributes</div>`;
+      for (const [attr, vmap] of catAttrs.slice(0, 5)) {
+        const total = [...vmap.values()].reduce((s, c) => s + c, 0);
+        const topVals = [...vmap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
+        html += `<div style="margin-bottom:6px;"><div style="color:var(--text2,#666);margin-bottom:2px;">${attr}</div>`;
+        for (const [val, cnt] of topVals) {
+          const pct = Math.round(cnt / total * 100);
+          html += `<div style="display:flex;align-items:center;gap:3px;margin-bottom:2px;">
+            <div style="flex:0 0 52px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;" title="${val}">${val}</div>
+            <div style="flex:1;height:5px;background:var(--bg3,#eee);border-radius:3px;overflow:hidden;">
+              <div style="width:${pct}%;height:100%;background:${g.color};border-radius:3px;"></div>
+            </div>
+            <div style="flex:0 0 26px;text-align:right;font-size:9px;color:var(--text3,#999);">${pct}%</div>
+          </div>`;
+        }
+        html += `</div>`;
+      }
+    } else {
+      html += `<div style="color:var(--text3,#999);font-style:italic;">No categorical attributes</div>`;
+    }
+
+    grpProfileContent.innerHTML = html;
+    grpProfileSec.style.display = '';
+  }
+
+  // ── Group tooltip helper ─────────────────────────────────────────────────
+  const TOOLTIP_ATTR_SKIP = new Set(['id','name','label','size','value','color','x','y','z','fx','fy','index','vx','vy']);
+  function buildGroupTooltip(gid) {
+    const g = gInfo.get(gid);
+    if (!g) return '';
+    const nodeById = new Map(allNodes.map(n => [n.id, n]));
+    const memberNodes = g.members.map(id => nodeById.get(id)).filter(Boolean);
+
+    // Structural rationale line per algorithm
+    const rationale = {
+      louvain:   'Louvain: nodes with high mutual edge density',
+      labelprop: 'Label Prop: majority-influence community',
+      kcore:     g.coreMin === 0 ? 'Periphery: low-connectivity nodes (k=0)'
+                 : g.coreMin === g.coreMax ? `k-${g.coreMin} shell: each node has ≥${g.coreMin} mutual connections`
+                 : `k-core shells ${g.coreMin}–${g.coreMax}`,
+      twin:      'Structural twins: identical neighbor signatures',
+      attribute: `Grouped by attribute: ${g.field}="${g.fieldValue}"`,
+      ipoctet:   `IP subnet: ${g.fieldValue || g.displayLabel}`,
+    }[g.kind] || g.kind;
+
+    const densityLine = (g.internalDensity != null)
+      ? `<br/><span style="color:#888">Internal edge density: ${g.internalDensity}%</span>` : '';
+    const llmLine = g.llmRationale
+      ? `<br/><i style="color:#555">${g.llmRationale}</i>` : '';
+
+    // Top shared attributes (≥50% of members share the value)
+    const attrFreq = new Map();
+    for (const n of memberNodes) {
+      for (const [k, v] of Object.entries(n)) {
+        if (TOOLTIP_ATTR_SKIP.has(k) || v == null || v === '') continue;
+        const key = k + '=' + v;
+        attrFreq.set(key, (attrFreq.get(key) || 0) + 1);
+      }
+    }
+    const sharedAttrs = [...attrFreq.entries()]
+      .filter(([, c]) => memberNodes.length > 0 && c / memberNodes.length >= 0.5)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 4)
+      .map(([key, c]) => `${key} (${Math.round(c / memberNodes.length * 100)}%)`);
+    const attrLine = sharedAttrs.length
+      ? '<br/><span style="color:#444">Shared: ' + sharedAttrs.join(' · ') + '</span>' : '';
+
+    const memberPreview = g.members.slice(0, 6).join(', ') + (g.members.length > 6 ? ', …' : '');
+    return `<b>${g.displayLabel}</b><br/><i style="color:#666">${rationale}</i>${densityLine}${llmLine}${attrLine}<br/><span style="color:#aaa;font-size:10px">${memberPreview}</span><br/><i style="color:#888;font-size:10px">click to expand</i>`;
+  }
 
   // D3-managed position store — persists across rerenders, never touched by ECharts
   const posStore = new Map();
@@ -1699,11 +2000,15 @@ function renderGraph(wrap, spec) {
     groupConns = computeGroupConns();
     posStore.clear();
     prevFilteredIds = new Set();
+    grpProfileSec.style.display = 'none';   // clear stale profile on method change
+    hullTooltip.style.display = 'none';     // clear stale hull tooltip
+    lastHullTooltipGid = null;
     noteEl.textContent = buildGroupingNote();
     noteEl.style.display = (l1Count > 0 || l2Count > 0) ? '' : 'none';
     grpSec.style.display = (l1Count > 0 || l2Count > 0) ? '' : 'none';
     updateMethodButtons();
     rerender();
+    if (l1Count > 0) generateGroupLabels();
   }
   const titleOpt = spec.title ? { text: spec.title, top: 5, left: 'center', textStyle: { color: t.text, fontSize: 13 } } : undefined;
   const ROLE_COLOR = { both: '#2E9CDB', source: '#2E9CDB', dest: '#2E9CDB' };
@@ -1720,6 +2025,7 @@ function renderGraph(wrap, spec) {
   let arrowheadMinSize = 8;
   let showArrowheads = true;
   let searchQuery = '';
+  let hoveredGroupGid = null;
 
   function rerender() {
     if (grpBtn) {
@@ -2134,15 +2440,7 @@ function renderGraph(wrap, spec) {
             return p.data.name ? p.data.name + (p.data.value != null ? ' (' + p.data.value + ')' : '')
               : p.data.source + (directed ? ' → ' : ' — ') + p.data.target;
           }
-          if (p.data._isGroup) {
-            const info = gInfo.get(p.data._gid);
-            const list = info.members.slice(0, 8).join(', ') + (info.members.length > 8 ? ', …' : '');
-            const kindLabel = info.kind === 'attribute'
-              ? (info.level === 1 ? 'Attribute group (L1)' : `Attribute sub-group (L${info.level})`)
-              : info.kind === 'louvain' ? 'Louvain community'
-              : 'Twin sub-group';
-            return '<b>' + p.name + '</b><br/><i>' + kindLabel + '</i><br/>' + list + '<br/><i>click to expand</i>';
-          }
+          if (p.data._isGroup) return buildGroupTooltip(p.data._gid);
           return p.name + (p.data._inGroup ? '<br/><i>click to collapse group</i>' : '');
         },
       },
@@ -2166,6 +2464,7 @@ function renderGraph(wrap, spec) {
 
   updateMethodButtons();
   rerender();
+  if (l1Count > 0) generateGroupLabels();
 
   // Flag set synchronously by the ECharts node-click handler so the hull
   // click handler below knows to skip hull hit-testing for that click.
@@ -2177,11 +2476,16 @@ function renderGraph(wrap, spec) {
     if (!d) return;
     ecClickHandled = true;
     if (d._isGroup) {
+      renderGroupProfile(d._gid);
       const grp = gInfo.get(d._gid);
       grp.savedPos = posStore.get(d._gid);
       grp.expanded = true;
       rerender();
-    } else if (d._inGroup) { gInfo.get(d._groupGid).expanded = false; rerender(); }
+    } else if (d._inGroup) {
+      renderGroupProfile(d._groupGid);
+      gInfo.get(d._groupGid).expanded = false;
+      rerender();
+    }
   });
 
   // Click anywhere on a hull's background area (not on a node) to collapse that group.
