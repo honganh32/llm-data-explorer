@@ -3979,7 +3979,7 @@ function buildVisualizationPrompt() {
     '- If the user\'s request **leads with a visualization verb** (create, show, draw, plot, visualize, make, build, generate) and describes a chart or graph — even with detailed specs about colors, axes, or layout — output ONLY the chart block. The extra detail is the chart specification, not a request for explanation. No preamble, no bullet-point findings, no follow-up questions.\n' +
     '- Otherwise (analytical questions starting with "what", "why", "how", "which", "compare", or requests for insights/summaries), include a brief text explanation before or after the chart and offer 1-2 follow-up questions the user might want to explore next.\n' +
     '- Do NOT add a LIMIT clause to SQL queries unless the user explicitly requests one. Return all matching rows by default.\n' +
-    '- Lazy data loading: for lineup, timearcs, timearcs-gl, graph, sankey, heatmap, box, violin, timeline, and swimlane charts — ALWAYS embed the SQL as `"sql":"SELECT..."` instead of an inline data array. The browser fetches all rows at render time. **Do NOT add a LIMIT clause** to lazy SQL specs. Use these standard column aliases: timearcs/timearcs-gl/graph/sankey → source, target, value, category; heatmap → x, y, value; box/violin → label, value; timeline → label, start, end, group; swimlane → time, actor, label, message, category (see swimlane prompt for full column list); lineup → exact column names from the SELECT list.\n' +
+    '- Lazy data loading: for lineup, timearcs, timearcs-gl, graph, sankey, nodetrix, heatmap, box, violin, timeline, and swimlane charts — ALWAYS embed the SQL as `"sql":"SELECT..."` instead of an inline data array. The browser fetches all rows at render time. **Do NOT add a LIMIT clause** to lazy SQL specs. Use these standard column aliases: timearcs/timearcs-gl/graph/sankey/nodetrix → source, target, value, category; heatmap → x, y, value; box/violin → label, value; timeline → label, start, end, group; swimlane → time, actor, label, message, category (see swimlane prompt for full column list); lineup → exact column names from the SELECT list.\n' +
     '- For pricing analysis, use grouped bar (two datasets: List Price vs Avg Sale Price).\n' +
     '- Omit xLabel/yLabel for pie/doughnut/rose/funnel/sunburst/treemap charts.\n' +
     '- Round monetary values to 2 decimal places in the data array.';
@@ -4293,6 +4293,21 @@ function mergeRowsIntoSpec(spec, rows) {
       });
       return { date: period, words };
     });
+  } else if (type === 'nodetrix') {
+    // Rows shape: { source, target, value? } — derive the node list and build
+    // index-based links. Communities (clusters) are detected in the renderScript.
+    const srcOf = r => pick(r, 'source', 'Source', 'src', 'from', 'src_ip', 'entity_a');
+    const tgtOf = r => pick(r, 'target', 'Target', 'destination', 'dst', 'dest', 'to', 'dst_ip', 'entity_b');
+    const ids = [...new Set(rows.flatMap(r => [srcOf(r), tgtOf(r)].filter(v => v != null)).map(String))];
+    const idxOf = new Map(ids.map((id, i) => [id, i]));
+    s.nodes = s.nodes || ids.map(id => ({ name: id }));
+    s.links = rows
+      .map(r => ({
+        source: idxOf.get(String(srcOf(r))),
+        target: idxOf.get(String(tgtOf(r))),
+        value:  +(pick(r, 'value', 'Value', 'count', 'Count', 'cnt', 'weight') ?? 1),
+      }))
+      .filter(l => l.source != null && l.target != null && l.source !== l.target);
   }
   return s;
 }

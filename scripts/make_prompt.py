@@ -137,7 +137,11 @@ Step-by-step:
 4. Write a `renderScript` that loads the library from CDN and renders using `wrap` and `spec`
 5. Write a `promptDescription` in the exact format shown above
 
-Output ONLY the JSON object. No markdown code fences, no explanation, nothing before or after the JSON.
+Output the JSON object inside a single ```json fenced code block, with nothing before or after it.
+The fenced code block is REQUIRED: it makes the chat UI preserve the JSON verbatim. Without a fence the
+JSON is rendered as Markdown, which silently destroys the content — `\\"` escapes collapse to `"`,
+`**bold**` loses its asterisks, every `*` (multiplication) is eaten as emphasis, and `[i]`/`[x][y]`
+indices are mangled as link syntax. After pasting, remove the ``` fences before saving the file.
 If the source spans multiple files, synthesize them into one self-contained renderScript.
 
 ---
