@@ -137,16 +137,21 @@ Fix any errors reported before proceeding.
 <a name="step-4-test-locally"></a>
 ## Step 4: Test locally
 
-### Easiest: use the Playground (no terminal, no console)
+### Easiest: use the Playground (no terminal, no console, no upload)
 
-1. Double-click **`playground.html`** to open it in your browser.
-2. Click **"1 · Plugin file"** and select your `chart_plugins/<type>.json`.
-3. Add your data:
-   - Click **"Fill example from plugin"** to auto-load the `Spec:` example from your `promptDescription`, **or**
-   - Paste your own data as JSON into the data box (or load a `.json` data file).
-4. Click **▶ Render**.
+Double-click **`playground.html`** to open it in your browser, then load your `chart_plugins/<type>.json` in step 1. Everything below runs in the page — your data never leaves your machine, and there are no network calls.
 
-Your chart appears on the right. Drag the bottom-right corner of the output to resize. Any errors (bad JSON, a plugin that throws, etc.) are shown right below the Render button. The playground preloads the same chart libraries the real app does, so plugins that rely on a global like `echarts` or `d3` work without changes.
+**Just want to see the plugin render?** Open the **Advanced · work with a spec directly** box, click **"Fill example from plugin"** (auto-loads the `Spec:` example from your `promptDescription`), and click **▶ Render spec**.
+
+**Want to test it on your own raw data?** The playground converts raw data into a spec without ever sending your data to an LLM:
+
+1. **Step 2** — load or paste your raw **CSV or JSON**, then click **Derive schema**. Only your column names and types are read; the rows stay in the page.
+2. **Step 3** — click **Build chatbot prompt**. It produces a prompt containing the plugin's description + your **column names only** (sample rows are opt-in). Paste it into any chatbot (ChatGPT/Claude/Gemini).
+3. **Step 4** — paste back the `transform(rows)` function the chatbot returns and click **▶ Apply transform & render**. The function runs **locally** on your real data to build the spec.
+
+The actual values never go to the LLM — only the structure does, and you can edit the prompt to redact column names first. Privacy-absolutists can skip the chatbot entirely and just write the `transform()` themselves.
+
+Your chart appears on the right (drag its corner to resize). Errors are shown below the buttons. The playground preloads the same chart libraries the real app does, so plugins that rely on a global like `echarts` or `d3` work without changes.
 
 > Note: a SQL-form spec (one with only a `"sql"` field) can't be tested in the playground because there's no database in the browser. Test with the inline data form (e.g. `nodes`/`links`) instead.
 

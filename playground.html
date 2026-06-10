@@ -6,7 +6,8 @@
 <title>Plugin Playground — test any chart plugin on your own data</title>
 
 <!-- Same library globals that data-explorer.html preloads, so plugins that
-     assume a global (echarts, d3, Chart, Plotly, ...) work here too. -->
+     assume a global (echarts, d3, Chart, Plotly, ...) work here too.
+     d3 also gives us a CSV parser for the raw-data step. -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
@@ -18,19 +19,21 @@
 <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
 
 <style>
-  :root { --bg:#0f1117; --panel:#1a1d27; --border:#2a2e3a; --text:#e6e8ee; --muted:#8b90a0; --accent:#534AB7; --err:#ff6b6b; --ok:#4caf50; }
+  :root { --bg:#0f1117; --panel:#1a1d27; --border:#2a2e3a; --text:#e6e8ee; --muted:#8b90a0; --accent:#534AB7; --err:#ff6b6b; --ok:#4caf50; --warn:#f0a840; }
   * { box-sizing: border-box; }
   body { margin:0; background:var(--bg); color:var(--text); font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif; }
   header { padding:18px 24px 12px; border-bottom:1px solid var(--border); }
   h1 { margin:0 0 4px; font-size:18px; font-weight:600; }
   .sub { color:var(--muted); font-size:13px; }
-  main { display:grid; grid-template-columns: 380px 1fr; gap:0; min-height:calc(100vh - 64px); }
+  main { display:grid; grid-template-columns: 430px 1fr; gap:0; min-height:calc(100vh - 64px); }
   .left { padding:18px 20px; border-right:1px solid var(--border); overflow:auto; }
   .right { padding:18px 24px; }
-  .field { margin-bottom:18px; }
+  .step { margin-bottom:20px; padding-bottom:18px; border-bottom:1px solid var(--border); }
+  .step:last-child { border-bottom:0; }
   label.cap { display:block; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin-bottom:6px; }
   input[type=file] { font-size:12px; color:var(--text); }
-  textarea { width:100%; height:230px; background:#0b0d13; color:#d6e2ff; border:1px solid var(--border); border-radius:6px; padding:10px; font:12px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace; resize:vertical; }
+  input[type=number] { width:54px; background:#0b0d13; color:var(--text); border:1px solid var(--border); border-radius:4px; padding:3px 6px; font:12px ui-monospace,Consolas,monospace; }
+  textarea { width:100%; background:#0b0d13; color:#d6e2ff; border:1px solid var(--border); border-radius:6px; padding:10px; font:12px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace; resize:vertical; }
   .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
   button { background:var(--accent); color:#fff; border:0; border-radius:6px; padding:8px 14px; font-size:13px; cursor:pointer; }
   button.ghost { background:transparent; border:1px solid var(--border); color:var(--text); }
@@ -44,37 +47,92 @@
   .status.ok { color:var(--ok); }
   .hint { font-size:12px; color:var(--muted); margin-top:6px; }
   code { background:#0b0d13; padding:1px 5px; border-radius:4px; color:#d6e2ff; }
+  .privacy { background:rgba(76,175,80,.08); border:1px solid rgba(76,175,80,.35); color:#bfe6c2; border-radius:8px; padding:10px 12px; font-size:12px; margin-bottom:18px; }
+  .privacy b { color:#dff3e0; }
+  #schemaPreview { margin-top:8px; background:#0b0d13; border:1px solid var(--border); border-radius:6px; padding:8px 10px; font:12px/1.5 ui-monospace,Consolas,monospace; color:#9fd0a3; max-height:150px; overflow:auto; white-space:pre-wrap; display:none; }
+  .warn { color:var(--warn); }
+  .chk { font-size:12px; color:var(--muted); display:flex; align-items:center; gap:6px; }
+  details summary { cursor:pointer; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); }
 </style>
 </head>
 <body>
 <header>
   <h1>Plugin Playground</h1>
-  <div class="sub">Test any chart plugin on your own data — no terminal, no console. Pick a plugin file, paste your data, hit Render.</div>
+  <div class="sub">Test any chart plugin on your own raw data — no terminal, no console, no upload. Everything runs in this page.</div>
 </header>
 
 <main>
   <div class="left">
-    <div class="field">
-      <label class="cap">1 · Plugin file (.json from chart_plugins/)</label>
+    <div class="privacy">
+      🔒 <b>Your data never leaves this page.</b> Files you load and text you paste stay in your browser — there are
+      no network calls here. To convert raw data into a chart spec you generate a prompt that shares only your
+      <b>column names</b> (which you can edit first), get a small <code>transform()</code> function back from a chatbot,
+      and run it locally on your real data. Or write the function yourself and skip the chatbot entirely.
+    </div>
+
+    <!-- STEP 1 — plugin -->
+    <div class="step">
+      <label class="cap">1 · Plugin file (the visualization, a .json from chart_plugins/)</label>
       <input type="file" id="pluginFile" accept=".json,application/json">
       <div class="hint" id="pluginInfo">No plugin loaded yet.</div>
     </div>
 
-    <div class="field">
-      <label class="cap">2 · Your data (the "spec" object)</label>
+    <!-- STEP 2 — raw data -->
+    <div class="step">
+      <label class="cap">2 · Your raw data (CSV or JSON) — stays in your browser</label>
       <div class="row" style="margin-bottom:8px;">
-        <button class="ghost" id="exampleBtn" disabled>Fill example from plugin</button>
-        <input type="file" id="specFile" accept=".json,application/json" title="…or load a .json data file">
+        <input type="file" id="dataFile" accept=".csv,.json,.txt,text/csv,application/json">
+        <button class="ghost" id="schemaBtn">Derive schema</button>
       </div>
-      <textarea id="specText" spellcheck="false" placeholder='Paste your data as JSON, e.g.&#10;{&#10;  "type": "gauge",&#10;  "title": "Demo",&#10;  "value": 73&#10;}'></textarea>
-      <div class="hint">This object is passed straight to the plugin as <code>spec</code>. SQL-only specs (a <code>"sql"</code> field) can't run here — use the inline data form instead.</div>
+      <textarea id="rawText" rows="6" spellcheck="false" placeholder="Paste CSV or JSON here, e.g.&#10;source,target,bytes&#10;10.0.0.1,10.0.0.2,540&#10;10.0.0.1,10.0.0.5,120&#10;&#10;…or a JSON array of row objects."></textarea>
+      <div id="schemaPreview"></div>
+      <div class="hint">Click <b>Derive schema</b> to read your columns and types. The actual rows are never shown to the chatbot unless you opt in below.</div>
     </div>
 
-    <div class="field row">
-      <button id="renderBtn" disabled>▶ Render</button>
-      <span class="pill" id="typePill"></span>
+    <!-- STEP 3 — build prompt -->
+    <div class="step">
+      <label class="cap">3 · Build a prompt for any chatbot (shares column names only)</label>
+      <label class="chk" style="margin-bottom:8px;">
+        <input type="checkbox" id="includeSamples">
+        Also include <input type="number" id="sampleN" value="3" min="1" max="20"> sample rows
+        <span class="warn">(shares real values — leave off for privacy)</span>
+      </label>
+      <div class="row" style="margin-bottom:8px;">
+        <button id="buildPromptBtn">Build chatbot prompt</button>
+        <button class="ghost" id="copyPromptBtn" disabled>Copy</button>
+      </div>
+      <textarea id="promptOut" rows="6" spellcheck="false" placeholder="The generated prompt appears here. Paste it into ChatGPT / Claude / Gemini and copy back the transform() function it returns."></textarea>
     </div>
-    <div class="status" id="status"></div>
+
+    <!-- STEP 4 — transform -->
+    <div class="step">
+      <label class="cap">4 · Paste the transform( ) function, then run it locally</label>
+      <textarea id="transformText" rows="7" spellcheck="false" placeholder="function transform(rows) {&#10;  // map your rows into the plugin's spec shape&#10;  return { type: '...', /* ... */ };&#10;}"></textarea>
+      <div class="row" style="margin-top:8px;">
+        <button id="applyBtn" disabled>▶ Apply transform & render</button>
+      </div>
+      <div class="hint">It receives your parsed data as <code>rows</code> and returns a spec. Runs entirely in this page — read it first if you like.</div>
+    </div>
+
+    <!-- STEP 5 — direct spec (advanced) -->
+    <div class="step">
+      <details>
+        <summary>Advanced · work with a spec directly</summary>
+        <div style="margin-top:10px;">
+          <div class="row" style="margin-bottom:8px;">
+            <button class="ghost" id="exampleBtn" disabled>Fill example from plugin</button>
+            <input type="file" id="specFile" accept=".json,application/json" title="…or load a .json spec file">
+          </div>
+          <textarea id="specText" rows="6" spellcheck="false" placeholder='A spec object passed straight to the plugin, e.g.&#10;{ "type": "gauge", "title": "Demo", "value": 73 }'></textarea>
+          <div class="hint">SQL-only specs (just a <code>"sql"</code> field) can't run here — use inline data instead.</div>
+        </div>
+      </details>
+      <div class="row" style="margin-top:12px;">
+        <button id="renderBtn" disabled>▶ Render spec</button>
+        <span class="pill" id="typePill"></span>
+      </div>
+      <div class="status" id="status"></div>
+    </div>
   </div>
 
   <div class="right">
@@ -87,6 +145,9 @@
 const $ = id => document.getElementById(id);
 let plugin = null;     // parsed plugin JSON
 let renderFn = null;   // compiled render function
+let parsedData = null; // the contributor's raw data, parsed (array of rows, or object) — never sent anywhere
+let schema = null;     // [{column, type}] or [{key, type}]
+let dataKind = null;   // 'rows' | 'object'
 
 function setStatus(msg, kind) {
   const el = $('status');
@@ -103,8 +164,7 @@ function readFile(file) {
   });
 }
 
-// Pull the most complete JSON object out of a plugin's promptDescription,
-// so contributors get a runnable sample spec with zero data prep.
+// ── Plugin ────────────────────────────────────────────────────────────────
 function extractExampleSpec(desc) {
   if (!desc) return null;
   const candidates = [];
@@ -131,11 +191,8 @@ function extractExampleSpec(desc) {
       }
     }
   }
-  // Only trust real top-level specs (they carry a "type" field). This avoids
-  // grabbing a nested data-point object that happens to have more keys.
   const specs = candidates.filter(o => typeof o.type === 'string' && o.type);
   if (!specs.length) return null;
-  // Prefer an inline (non-SQL) example, since SQL can't run client-side.
   const renderable = specs.filter(o => !('sql' in o));
   const pool = renderable.length ? renderable : specs;
   pool.sort((a, b) => Object.keys(b).length - Object.keys(a).length);
@@ -153,28 +210,189 @@ async function loadPlugin(file) {
     $('typePill').innerHTML = 'plugin: <b>' + (plugin.type || '?') + '</b>';
     $('exampleBtn').disabled = false;
     $('renderBtn').disabled = false;
-    setStatus('Plugin compiled. Add data and click Render.', 'ok');
+    $('applyBtn').disabled = false;
+    setStatus('Plugin compiled. Bring your data in step 2, or use a spec directly.', 'ok');
   } catch (e) {
     plugin = null; renderFn = null;
     $('exampleBtn').disabled = true;
     $('renderBtn').disabled = true;
+    $('applyBtn').disabled = true;
     setStatus('Plugin error: ' + e.message, 'err');
   }
 }
 
+// ── Raw data → schema (all local) ───────────────────────────────────────────
+function inferType(v) {
+  if (v === null || v === undefined || v === '') return 'null';
+  if (typeof v === 'number') return Number.isFinite(v) ? 'number' : 'string';
+  if (typeof v === 'boolean') return 'boolean';
+  if (v instanceof Date) return 'date';
+  if (Array.isArray(v)) return 'array';
+  if (typeof v === 'object') return 'object';
+  return 'string';
+}
+
+// Parse the raw-data box into JS. Tries JSON first, then CSV (via d3). The
+// parsed result is kept only in memory and is never transmitted.
+function parseRawData() {
+  const raw = $('rawText').value.trim();
+  if (!raw) throw new Error('No raw data — paste CSV or JSON, or load a file.');
+  // JSON?
+  try {
+    const j = JSON.parse(raw);
+    parsedData = j;
+    dataKind = Array.isArray(j) ? 'rows' : 'object';
+    return;
+  } catch (e) { /* not JSON, try CSV */ }
+  // CSV via d3 (autoType infers numbers/dates/booleans)
+  const rows = d3.csvParse(raw, d3.autoType);
+  if (!rows || !rows.length || !rows.columns || !rows.columns.length) {
+    throw new Error('Could not parse as JSON or CSV. Check the format.');
+  }
+  parsedData = rows.map(r => Object.assign({}, r)); // drop d3's .columns metadata
+  dataKind = 'rows';
+}
+
+function deriveSchema() {
+  try {
+    parseRawData();
+  } catch (e) {
+    schema = null;
+    $('schemaPreview').style.display = 'none';
+    setStatus(e.message, 'err');
+    return false;
+  }
+
+  if (dataKind === 'rows') {
+    const rows = parsedData;
+    if (!rows.length || typeof rows[0] !== 'object') {
+      setStatus('Parsed an array, but its items are not row objects. The transform will receive the array as-is.', '');
+    }
+    // union of keys across up to 50 rows; type from first non-empty value seen
+    const cols = [];
+    const seen = {};
+    for (let i = 0; i < Math.min(rows.length, 50); i++) {
+      const r = rows[i]; if (!r || typeof r !== 'object') continue;
+      for (const k of Object.keys(r)) {
+        if (!(k in seen)) { seen[k] = 'null'; cols.push(k); }
+        if (seen[k] === 'null') { const t = inferType(r[k]); if (t !== 'null') seen[k] = t; }
+      }
+    }
+    schema = cols.map(c => ({ column: c, type: seen[c] === 'null' ? 'string' : seen[c] }));
+    $('schemaPreview').textContent =
+      (Array.isArray(parsedData) ? parsedData.length : 0) + ' rows · ' + schema.length + ' columns\n' +
+      schema.map(s => '  ' + s.column + ' : ' + s.type).join('\n');
+  } else {
+    // top-level object: describe its keys
+    const obj = parsedData;
+    schema = Object.keys(obj).map(k => ({ key: k, type: inferType(obj[k]) }));
+    $('schemaPreview').textContent =
+      'object · ' + schema.length + ' keys\n' +
+      schema.map(s => '  ' + s.key + ' : ' + s.type).join('\n');
+  }
+  $('schemaPreview').style.display = 'block';
+  setStatus('Schema derived locally. Build a prompt in step 3, or write the transform yourself in step 4.', 'ok');
+  return true;
+}
+
+// ── Build the chatbot prompt (column names only, unless samples opted in) ────
+function buildPrompt() {
+  if (!plugin) { setStatus('Load a plugin first (step 1) so the prompt knows the target spec.', 'err'); return; }
+  if (!schema) { if (!deriveSchema()) return; }
+
+  const desc = plugin.promptDescription || '(no promptDescription in this plugin)';
+  const schemaJson = JSON.stringify(schema, null, 2);
+
+  let samplesBlock = '';
+  if ($('includeSamples').checked && dataKind === 'rows' && Array.isArray(parsedData)) {
+    const n = Math.max(1, Math.min(20, parseInt($('sampleN').value, 10) || 3));
+    samplesBlock =
+      '\nSAMPLE ROWS (real values — included at my discretion):\n' +
+      JSON.stringify(parsedData.slice(0, n), null, 2) + '\n';
+  }
+
+  const dataDesc = dataKind === 'rows'
+    ? '`rows` is an array of row objects whose keys/types are described by this schema:'
+    : '`rows` is a single object whose keys/types are described by this schema:';
+
+  const prompt =
+`I have a chart plugin and some tabular data. Write a JavaScript function that converts my data into a valid spec for the plugin. You will NOT see my data values — only its structure.
+
+PLUGIN DESCRIPTION (defines the spec shape):
+${desc}
+
+DATA STRUCTURE — ${dataDesc}
+${schemaJson}
+${samplesBlock}
+TASK:
+Write a single self-contained JavaScript function with this exact signature:
+
+  function transform(rows) {
+    // ...
+    return spec;
+  }
+
+Requirements:
+- Return a spec object valid for the plugin above (match the "Spec:" shape in its description).
+- Derive everything from \`rows\` at runtime — do NOT hard-code my data values.
+- No external libraries, no fetch/network, no comments needed.
+- Output ONLY the function. No prose, no markdown code fences.`;
+
+  $('promptOut').value = prompt;
+  $('copyPromptBtn').disabled = false;
+  setStatus('Prompt built — it shares ' + (samplesBlock ? 'your column names AND sample rows' : 'your column names only') +
+            '. Review/edit it, paste into a chatbot, and bring back the function.', samplesBlock ? '' : 'ok');
+}
+
+// ── Compile + apply the transform locally ───────────────────────────────────
+function compileTransform(text) {
+  let body = (text || '').trim();
+  body = body.replace(/^```[a-z]*\s*/i, '').replace(/```\s*$/i, '').trim();
+  if (!body) return null;
+  // expression form:  function(rows){...}  or  (rows)=>({...})
+  try { const f = new Function('return (' + body + ')')(); if (typeof f === 'function') return f; } catch (e) { /* try next */ }
+  // declaration form: function transform(rows){...}
+  try {
+    const f = new Function(body + '\n; return typeof transform === "function" ? transform : null;')();
+    if (typeof f === 'function') return f;
+  } catch (e) { /* fall through */ }
+  return null;
+}
+
+function applyTransform() {
+  if (!renderFn) { setStatus('Load a plugin first.', 'err'); return; }
+  if (!parsedData) {
+    try { parseRawData(); } catch (e) { setStatus(e.message, 'err'); return; }
+  }
+  const fn = compileTransform($('transformText').value);
+  if (!fn) { setStatus('Could not compile the transform. It should define function transform(rows){…} (or be a function expression).', 'err'); return; }
+  let spec;
+  try {
+    spec = fn(parsedData);
+  } catch (e) {
+    setStatus('transform() threw on your data: ' + (e && e.message ? e.message : e), 'err');
+    return;
+  }
+  if (!spec || typeof spec !== 'object') { setStatus('transform() did not return a spec object.', 'err'); return; }
+  $('specText').value = JSON.stringify(spec, null, 2);
+  setStatus('Transform produced a spec locally — rendering…', 'ok');
+  render();
+}
+
+// ── Render whatever is in the spec box ──────────────────────────────────────
 function render() {
   if (!renderFn) { setStatus('Load a plugin first.', 'err'); return; }
   let spec;
   try {
     const raw = $('specText').value.trim();
-    if (!raw) throw new Error('Data box is empty. Paste a spec or click "Fill example from plugin".');
+    if (!raw) throw new Error('No spec to render. Use steps 2–4, or paste a spec in the Advanced box.');
     spec = JSON.parse(raw);
   } catch (e) {
-    setStatus('Your data is not valid JSON: ' + e.message, 'err');
+    setStatus('Spec is not valid JSON: ' + e.message, 'err');
     return;
   }
   if (spec && spec.sql && !spec.nodes && !spec.data) {
-    setStatus('This spec only has a "sql" field. The playground can\'t run SQL — provide inline data (e.g. nodes/links) instead.', 'err');
+    setStatus('This spec only has a "sql" field. The playground can\'t run SQL — provide inline data instead.', 'err');
     return;
   }
 
@@ -182,36 +400,47 @@ function render() {
   chart.innerHTML = '';
   setStatus('Rendering…');
 
-  // The render may load a CDN script and draw asynchronously, so a plain
-  // try/catch around the call misses errors thrown in that callback.
-  // Capture them with a temporary global error handler.
+  // Render may load a CDN script and draw asynchronously, so a plain try/catch
+  // around the call misses errors thrown in that callback.
   let asyncErr = null;
   const onErr = e => { asyncErr = e.error || e.message || e; };
   window.addEventListener('error', onErr);
   try {
     renderFn(chart, spec);
-    setStatus('Rendered ✓  (if the canvas is blank, check your data shape against the plugin\'s Spec example)', 'ok');
+    setStatus('Rendered ✓  (if the canvas is blank, check your spec against the plugin\'s Spec example)', 'ok');
   } catch (e) {
     setStatus('Render threw: ' + (e && e.message ? e.message : e), 'err');
   }
-  // Give async render a moment, then report any error it raised.
   setTimeout(() => {
     window.removeEventListener('error', onErr);
     if (asyncErr) setStatus('Render error (async): ' + (asyncErr.message || asyncErr), 'err');
   }, 1500);
 }
 
+// ── Wiring ──────────────────────────────────────────────────────────────────
 $('pluginFile').addEventListener('change', e => { if (e.target.files[0]) loadPlugin(e.target.files[0]); });
+$('dataFile').addEventListener('change', async e => {
+  if (!e.target.files[0]) return;
+  try { $('rawText').value = await readFile(e.target.files[0]); deriveSchema(); }
+  catch (err) { setStatus('Could not read data file: ' + err.message, 'err'); }
+});
+$('schemaBtn').addEventListener('click', deriveSchema);
+$('buildPromptBtn').addEventListener('click', buildPrompt);
+$('copyPromptBtn').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText($('promptOut').value); setStatus('Prompt copied to clipboard.', 'ok'); }
+  catch (e) { $('promptOut').select(); setStatus('Couldn\'t auto-copy — the prompt is selected, press Ctrl+C.', 'err'); }
+});
+$('applyBtn').addEventListener('click', applyTransform);
 $('specFile').addEventListener('change', async e => {
   if (!e.target.files[0]) return;
-  try { $('specText').value = await readFile(e.target.files[0]); setStatus('Data file loaded.', 'ok'); }
-  catch (err) { setStatus('Could not read data file: ' + err.message, 'err'); }
+  try { $('specText').value = await readFile(e.target.files[0]); setStatus('Spec file loaded.', 'ok'); }
+  catch (err) { setStatus('Could not read spec file: ' + err.message, 'err'); }
 });
 $('exampleBtn').addEventListener('click', () => {
   const ex = extractExampleSpec(plugin && plugin.promptDescription);
-  if (!ex) { setStatus('No example spec found in this plugin\'s promptDescription — paste your own data.', 'err'); return; }
+  if (!ex) { setStatus('No example spec found in this plugin\'s promptDescription — bring your own data.', 'err'); return; }
   $('specText').value = JSON.stringify(ex, null, 2);
-  setStatus('Example spec filled in from the plugin. Click Render.', 'ok');
+  setStatus('Example spec filled in from the plugin. Click Render spec.', 'ok');
 });
 $('renderBtn').addEventListener('click', render);
 </script>
