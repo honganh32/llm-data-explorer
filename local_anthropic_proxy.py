@@ -28,7 +28,7 @@ DB_PORT = int(os.getenv("DB_PORT", "5432"))
 DB_NAME = os.getenv("DB_NAME", "AdventureWorks2019")
 
 DB_USER = os.getenv("DB_USER", "postgres")
-DB_PASS = os.getenv("DB_PASS", "458213")
+DB_PASS = os.getenv("DB_PASS")  # required; set via env var, no default
 DB_ROW_LIMIT = int(os.getenv("DB_ROW_LIMIT", "500"))
 
 # ── Tool definition (description is built dynamically per-request) ─────────────

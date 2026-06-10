@@ -137,23 +137,22 @@ Fix any errors reported before proceeding.
 <a name="step-4-test-locally"></a>
 ## Step 4: Test locally
 
-Start the MCP server:
+### Easiest: use the Playground (no terminal, no console)
 
-```bash
-python mcp_server/server.py
-```
+1. Double-click **`playground.html`** to open it in your browser.
+2. Click **"1 · Plugin file"** and select your `chart_plugins/<type>.json`.
+3. Add your data:
+   - Click **"Fill example from plugin"** to auto-load the `Spec:` example from your `promptDescription`, **or**
+   - Paste your own data as JSON into the data box (or load a `.json` data file).
+4. Click **▶ Render**.
 
-Then in a browser console (or Node.js), call your chart:
+Your chart appears on the right. Drag the bottom-right corner of the output to resize. Any errors (bad JSON, a plugin that throws, etc.) are shown right below the Render button. The playground preloads the same chart libraries the real app does, so plugins that rely on a global like `echarts` or `d3` work without changes.
 
-```js
-// Fetch the plugin from the running server
-const res = await fetch('http://localhost:8000/sse'); // or use an MCP client
-```
+> Note: a SQL-form spec (one with only a `"sql"` field) can't be tested in the playground because there's no database in the browser. Test with the inline data form (e.g. `nodes`/`links`) instead.
 
-Or test the renderScript directly in a browser:
+### Advanced: render manually in the console
 
-1. Open `data-explorer.html` in your browser.
-2. Open the browser console and paste:
+If you'd rather drive it yourself, open `data-explorer.html`, open the browser console, and paste — replacing the two placeholders with your plugin JSON and a sample spec:
 
 ```js
 const plugin = /* paste your plugin JSON here */;

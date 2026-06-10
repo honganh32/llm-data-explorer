@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plugin Playground — test any chart plugin on your own data</title>
+
+<!-- Same library globals that data-explorer.html preloads, so plugins that
+     assume a global (echarts, d3, Chart, Plotly, ...) work here too. -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/apexcharts@3/dist/apexcharts.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lineupjs@4/build/LineUpJS.css">
+<script src="https://cdn.jsdelivr.net/npm/lineupjs@4/build/LineUpJS.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.131.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.131.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+
+<style>
+  :root { --bg:#0f1117; --panel:#1a1d27; --border:#2a2e3a; --text:#e6e8ee; --muted:#8b90a0; --accent:#534AB7; --err:#ff6b6b; --ok:#4caf50; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif; }
+  header { padding:18px 24px 12px; border-bottom:1px solid var(--border); }
+  h1 { margin:0 0 4px; font-size:18px; font-weight:600; }
+  .sub { color:var(--muted); font-size:13px; }
+  main { display:grid; grid-template-columns: 380px 1fr; gap:0; min-height:calc(100vh - 64px); }
+  .left { padding:18px 20px; border-right:1px solid var(--border); overflow:auto; }
+  .right { padding:18px 24px; }
+  .field { margin-bottom:18px; }
+  label.cap { display:block; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin-bottom:6px; }
+  input[type=file] { font-size:12px; color:var(--text); }
+  textarea { width:100%; height:230px; background:#0b0d13; color:#d6e2ff; border:1px solid var(--border); border-radius:6px; padding:10px; font:12px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace; resize:vertical; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  button { background:var(--accent); color:#fff; border:0; border-radius:6px; padding:8px 14px; font-size:13px; cursor:pointer; }
+  button.ghost { background:transparent; border:1px solid var(--border); color:var(--text); }
+  button:disabled { opacity:.45; cursor:default; }
+  .pill { font-size:12px; color:var(--muted); }
+  .pill b { color:var(--text); }
+  #stage { background:#fff; border-radius:10px; border:1px solid var(--border); overflow:auto; resize:both; width:100%; height:560px; min-height:200px; min-width:280px; }
+  #chart { width:100%; height:100%; }
+  .status { margin-top:10px; font-size:12px; white-space:pre-wrap; font-family:ui-monospace,Consolas,monospace; }
+  .status.err { color:var(--err); }
+  .status.ok { color:var(--ok); }
+  .hint { font-size:12px; color:var(--muted); margin-top:6px; }
+  code { background:#0b0d13; padding:1px 5px; border-radius:4px; color:#d6e2ff; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Plugin Playground</h1>
+  <div class="sub">Test any chart plugin on your own data — no terminal, no console. Pick a plugin file, paste your data, hit Render.</div>
+</header>
+
+<main>
+  <div class="left">
+    <div class="field">
+      <label class="cap">1 · Plugin file (.json from chart_plugins/)</label>
+      <input type="file" id="pluginFile" accept=".json,application/json">
+      <div class="hint" id="pluginInfo">No plugin loaded yet.</div>
+    </div>
+
+    <div class="field">
+      <label class="cap">2 · Your data (the "spec" object)</label>
+      <div class="row" style="margin-bottom:8px;">
+        <button class="ghost" id="exampleBtn" disabled>Fill example from plugin</button>
+        <input type="file" id="specFile" accept=".json,application/json" title="…or load a .json data file">
+      </div>
+      <textarea id="specText" spellcheck="false" placeholder='Paste your data as JSON, e.g.&#10;{&#10;  "type": "gauge",&#10;  "title": "Demo",&#10;  "value": 73&#10;}'></textarea>
+      <div class="hint">This object is passed straight to the plugin as <code>spec</code>. SQL-only specs (a <code>"sql"</code> field) can't run here — use the inline data form instead.</div>
+    </div>
+
+    <div class="field row">
+      <button id="renderBtn" disabled>▶ Render</button>
+      <span class="pill" id="typePill"></span>
+    </div>
+    <div class="status" id="status"></div>
+  </div>
+
+  <div class="right">
+    <label class="cap">Output (drag bottom-right corner to resize)</label>
+    <div id="stage"><div id="chart"></div></div>
+  </div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+let plugin = null;     // parsed plugin JSON
+let renderFn = null;   // compiled render function
+
+function setStatus(msg, kind) {
+  const el = $('status');
+  el.textContent = msg || '';
+  el.className = 'status' + (kind ? ' ' + kind : '');
+}
+
+function readFile(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(new Error('Could not read file'));
+    r.readAsText(file);
+  });
+}
+
+// Pull the most complete JSON object out of a plugin's promptDescription,
+// so contributors get a runnable sample spec with zero data prep.
+function extractExampleSpec(desc) {
+  if (!desc) return null;
+  const candidates = [];
+  for (let i = 0; i < desc.length; i++) {
+    if (desc[i] !== '{') continue;
+    let depth = 0, inStr = false, esc = false;
+    for (let j = i; j < desc.length; j++) {
+      const c = desc[j];
+      if (inStr) {
+        if (esc) esc = false;
+        else if (c === '\\') esc = true;
+        else if (c === '"') inStr = false;
+      } else if (c === '"') inStr = true;
+      else if (c === '{') depth++;
+      else if (c === '}') {
+        depth--;
+        if (depth === 0) {
+          try {
+            const obj = JSON.parse(desc.slice(i, j + 1));
+            if (obj && typeof obj === 'object') candidates.push(obj);
+          } catch (e) { /* not valid JSON, skip */ }
+          break;
+        }
+      }
+    }
+  }
+  // Only trust real top-level specs (they carry a "type" field). This avoids
+  // grabbing a nested data-point object that happens to have more keys.
+  const specs = candidates.filter(o => typeof o.type === 'string' && o.type);
+  if (!specs.length) return null;
+  // Prefer an inline (non-SQL) example, since SQL can't run client-side.
+  const renderable = specs.filter(o => !('sql' in o));
+  const pool = renderable.length ? renderable : specs;
+  pool.sort((a, b) => Object.keys(b).length - Object.keys(a).length);
+  return pool[0];
+}
+
+async function loadPlugin(file) {
+  try {
+    const text = await readFile(file);
+    plugin = JSON.parse(text);
+    if (!plugin.renderScript) throw new Error('This JSON has no "renderScript" field — is it a plugin file?');
+    renderFn = new Function('return (' + plugin.renderScript + ')')();
+    if (typeof renderFn !== 'function') throw new Error('renderScript did not compile to a function.');
+    $('pluginInfo').innerHTML = 'Loaded <b>' + (plugin.type || file.name) + '</b> ✓';
+    $('typePill').innerHTML = 'plugin: <b>' + (plugin.type || '?') + '</b>';
+    $('exampleBtn').disabled = false;
+    $('renderBtn').disabled = false;
+    setStatus('Plugin compiled. Add data and click Render.', 'ok');
+  } catch (e) {
+    plugin = null; renderFn = null;
+    $('exampleBtn').disabled = true;
+    $('renderBtn').disabled = true;
+    setStatus('Plugin error: ' + e.message, 'err');
+  }
+}
+
+function render() {
+  if (!renderFn) { setStatus('Load a plugin first.', 'err'); return; }
+  let spec;
+  try {
+    const raw = $('specText').value.trim();
+    if (!raw) throw new Error('Data box is empty. Paste a spec or click "Fill example from plugin".');
+    spec = JSON.parse(raw);
+  } catch (e) {
+    setStatus('Your data is not valid JSON: ' + e.message, 'err');
+    return;
+  }
+  if (spec && spec.sql && !spec.nodes && !spec.data) {
+    setStatus('This spec only has a "sql" field. The playground can\'t run SQL — provide inline data (e.g. nodes/links) instead.', 'err');
+    return;
+  }
+
+  const chart = $('chart');
+  chart.innerHTML = '';
+  setStatus('Rendering…');
+
+  // The render may load a CDN script and draw asynchronously, so a plain
+  // try/catch around the call misses errors thrown in that callback.
+  // Capture them with a temporary global error handler.
+  let asyncErr = null;
+  const onErr = e => { asyncErr = e.error || e.message || e; };
+  window.addEventListener('error', onErr);
+  try {
+    renderFn(chart, spec);
+    setStatus('Rendered ✓  (if the canvas is blank, check your data shape against the plugin\'s Spec example)', 'ok');
+  } catch (e) {
+    setStatus('Render threw: ' + (e && e.message ? e.message : e), 'err');
+  }
+  // Give async render a moment, then report any error it raised.
+  setTimeout(() => {
+    window.removeEventListener('error', onErr);
+    if (asyncErr) setStatus('Render error (async): ' + (asyncErr.message || asyncErr), 'err');
+  }, 1500);
+}
+
+$('pluginFile').addEventListener('change', e => { if (e.target.files[0]) loadPlugin(e.target.files[0]); });
+$('specFile').addEventListener('change', async e => {
+  if (!e.target.files[0]) return;
+  try { $('specText').value = await readFile(e.target.files[0]); setStatus('Data file loaded.', 'ok'); }
+  catch (err) { setStatus('Could not read data file: ' + err.message, 'err'); }
+});
+$('exampleBtn').addEventListener('click', () => {
+  const ex = extractExampleSpec(plugin && plugin.promptDescription);
+  if (!ex) { setStatus('No example spec found in this plugin\'s promptDescription — paste your own data.', 'err'); return; }
+  $('specText').value = JSON.stringify(ex, null, 2);
+  setStatus('Example spec filled in from the plugin. Click Render.', 'ok');
+});
+$('renderBtn').addEventListener('click', render);
+</script>
+</body>
+</html>

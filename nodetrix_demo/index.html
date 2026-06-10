@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NodeTrix Demo — Network90Mins (minute bins)</title>
+<style>
+  :root { --bg:#0f1117; --panel:#1a1d27; --border:#2a2e3a; --text:#e6e8ee; --muted:#8b90a0; --accent:#534AB7; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif; }
+  header { padding:18px 24px 12px; border-bottom:1px solid var(--border); }
+  h1 { margin:0 0 4px; font-size:18px; font-weight:600; }
+  .sub { color:var(--muted); font-size:13px; }
+  .controls { display:flex; align-items:center; gap:14px; padding:14px 24px; flex-wrap:wrap; }
+  button { background:var(--accent); color:#fff; border:0; border-radius:6px; padding:7px 14px; font-size:13px; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:default; }
+  input[type=range] { flex:1; min-width:240px; accent-color:var(--accent); }
+  .badge { background:var(--panel); border:1px solid var(--border); border-radius:6px; padding:5px 10px; font-variant-numeric:tabular-nums; }
+  .badge b { color:#fff; } .badge span { color:var(--muted); }
+  #stage { margin:8px 24px 24px; background:#fff; border-radius:10px; border:1px solid var(--border); overflow:hidden; }
+  #chart { width:100%; height:560px; }
+  .legend { padding:0 24px 20px; color:var(--muted); font-size:12px; }
+  .legend b { color:var(--text); font-weight:600; }
+  .err { color:#ff6b6b; padding:24px; white-space:pre-wrap; font-family:monospace; }
+</style>
+</head>
+<body>
+<header>
+  <h1>NodeTrix — Network90Mins minute-by-minute communication</h1>
+  <div class="sub" id="subtitle">Loading…</div>
+</header>
+
+<div class="controls">
+  <button id="play">▶ Play</button>
+  <button id="prev">◀</button>
+  <input type="range" id="scrub" min="0" max="0" value="0" step="1" disabled>
+  <button id="next">▶</button>
+  <span class="badge"><span>minute</span> <b id="timeLabel">—</b></span>
+  <span class="badge"><b id="nNodes">0</b> <span>IPs</span></span>
+  <span class="badge"><b id="nLinks">0</b> <span>connections</span></span>
+</div>
+
+<div id="stage"><div id="chart"></div></div>
+
+<div class="legend">
+  <b>Dense communities</b> render as adjacency-matrix blocks (darker cells = more packets);
+  <b>sparse cross-group traffic</b> renders as a node-link layout. Communities are detected
+  automatically by the plugin. Drag to reposition, scroll to zoom. Each frame is the top
+  <b id="topk">40</b> most active IPs in that one-minute bin.
+</div>
+
+<script>
+const PLUGIN_URL = '../chart_plugins/nodetrix.json';
+const DATA_URL = './data.json';
+
+const $ = id => document.getElementById(id);
+let renderFn = null, data = null, idx = 0, timer = null;
+
+function renderMinute(i) {
+  const m = data.minutes[i];
+  $('timeLabel').textContent = m.label;
+  $('nNodes').textContent = m.nodes.length;
+  $('nLinks').textContent = m.links.length;
+  $('scrub').value = i;
+  const chart = $('chart');
+  chart.innerHTML = '';
+  // The plugin reads wrap.style.height; keep our fixed stage height.
+  chart.style.height = '560px';
+  renderFn(chart, {
+    type: 'nodetrix',
+    title: data.title + '  —  ' + m.label,
+    nodes: m.nodes,
+    links: m.links,
+  });
+}
+
+function step(delta) {
+  idx = (idx + delta + data.minutes.length) % data.minutes.length;
+  renderMinute(idx);
+}
+
+function togglePlay() {
+  if (timer) { clearInterval(timer); timer = null; $('play').textContent = '▶ Play'; return; }
+  $('play').textContent = '⏸ Pause';
+  timer = setInterval(() => step(1), 1200);
+}
+
+async function init() {
+  try {
+    const [pluginRes, dataRes] = await Promise.all([fetch(PLUGIN_URL), fetch(DATA_URL)]);
+    if (!pluginRes.ok) throw new Error('Could not load plugin (' + PLUGIN_URL + '): ' + pluginRes.status);
+    if (!dataRes.ok) throw new Error('Could not load data (' + DATA_URL + '): ' + dataRes.status);
+    const plugin = await pluginRes.json();
+    renderFn = new Function('return (' + plugin.renderScript + ')')();
+    if (typeof renderFn !== 'function') throw new Error('plugin renderScript is not a function');
+    data = await dataRes.json();
+
+    $('subtitle').textContent =
+      data.minutes.length + ' one-minute bins · ' + data.resolution + ' resolution · plugin: ' + plugin.type;
+    $('topk').textContent = data.topk;
+    const scrub = $('scrub');
+    scrub.max = data.minutes.length - 1;
+    scrub.disabled = false;
+    scrub.addEventListener('input', () => { idx = +scrub.value; renderMinute(idx); });
+    $('play').addEventListener('click', togglePlay);
+    $('prev').addEventListener('click', () => step(-1));
+    $('next').addEventListener('click', () => step(1));
+    renderMinute(0);
+  } catch (e) {
+    document.body.innerHTML = '<div class="err">NodeTrix demo failed to start.\n\n' + String(e) +
+      '\n\nServe the repo over HTTP (browsers block fetch on file://):\n' +
+      '  cd e:\\multi-agent\\llm-data-explorer\n  python -m http.server 8011\nthen open  http://localhost:8011/nodetrix_demo/</div>';
+  }
+}
+init();
+</script>
+</body>
+</html>
