@@ -19,3 +19,9 @@ scripts/_last_prompt.txt
 # Personal Claude Code config (machine-specific paths, permission allowlist)
 .claude/settings.json
 .claude/settings.local.json
+
+# Internal datasets — not for public distribution (real network capture + DB schemas)
+nodetrix_demo/data.json
+schema_contexts/schema_context_hpcdata.js
+schema_contexts/schema_context_network90mins.js
+schema_contexts/schema_context_network_monitoring.js

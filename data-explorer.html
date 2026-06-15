@@ -3140,7 +3140,7 @@ function renderDynet3D(wrap, spec) {
   }
 
   // Label textures are shared across slices: many sprites use the same text
-  // (e.g. "172.28.22.186" labelled at every slice the IP is active in), so
+  // (e.g. "203.0.113.42" labelled at every slice the IP is active in), so
   // we allocate one CanvasTexture per unique (text, color) and reuse it.
   const labelTexCache = new Map();
   function makeTextSprite(text, color, sizeMul) {
