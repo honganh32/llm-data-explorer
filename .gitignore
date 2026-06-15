@@ -14,3 +14,4 @@ venv/
 .DS_Store
 Thumbs.db
 /agent_responses
+scripts/_last_prompt.txt
