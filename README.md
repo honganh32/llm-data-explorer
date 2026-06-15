@@ -73,12 +73,13 @@ The AI will call `suggest_chart`, pick the best type, retrieve the `renderScript
 | Library | Chart types |
 |---------|-------------|
 | Chart.js | bar, line, pie, doughnut, scatter |
-| ECharts | rose, radar, heatmap, treemap, sunburst, parallel, sankey, funnel, graph |
+| ECharts | rose, radar, heatmap, treemap, sunburst, parallel, sankey, funnel, graph, gauge |
 | Plotly | box, violin, waterfall, candlestick |
 | ApexCharts | timeline, rangebar, rangearea |
 | LineUpJS | lineup |
+| D3 | storyline, nodetrix, swimlane, wordstream |
 | Three.js + D3 | dynet3d |
-| Custom | aardvark, crossset, gauge, pad, swimlane, timearcs, timearcs-gl, timelighting |
+| Custom (self-contained) | crossset, timearcs, timearcs-gl |
 
 ---
 
