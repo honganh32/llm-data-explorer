@@ -98,6 +98,20 @@ def validate_file(path: Path) -> bool:
     if "localhost" in script or "127.0.0.1" in script:
         error("'renderScript' references localhost — use a CDN URL instead")
 
+    # 8. exampleSpec (optional) — a small, real, inline spec the playground can render
+    if "exampleSpec" in plugin:
+        ex = plugin["exampleSpec"]
+        if not isinstance(ex, dict):
+            error(f"'exampleSpec' must be an object, got {type(ex).__name__}")
+        else:
+            if ex.get("type") != ptype:
+                error(f"'exampleSpec.type' ('{ex.get('type')}') must equal the plugin type '{ptype}'")
+            # SQL-only specs can't render in playground.html (no database in the browser)
+            if "sql" in ex and not any(k in ex for k in ("data", "rows", "nodes", "links", "events",
+                                                          "datasets", "labels", "snapshots", "value")):
+                warn("'exampleSpec' has only a 'sql' field — playground.html can't render it; "
+                     "provide an inline-data example instead")
+
     _print_result(path)
     return len(ERRORS) == 0
 

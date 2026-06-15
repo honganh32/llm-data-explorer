@@ -2,11 +2,12 @@ You are helping create a chart plugin for an open-source data visualization syst
 
 ## What you must produce
 
-A single JSON object with exactly three string fields:
+A single JSON object with these fields:
 
-  "type"              — unique lowercase identifier, hyphens allowed (e.g. "chord", "force-directed")
-  "promptDescription" — see format below
-  "renderScript"      — see format below
+  "type"              — (string) unique lowercase identifier, hyphens allowed (e.g. "chord", "force-directed")
+  "promptDescription" — (string) see format below
+  "exampleSpec"       — (object) a small, ready-to-render demo spec; see format below
+  "renderScript"      — (string) see format below
 
 ---
 
@@ -22,6 +23,26 @@ Rules:
 - The sentence should say WHEN this chart is useful (not what it looks like)
 - Include every required data field in the Spec example, with realistic placeholder values
 - Escape all inner double-quotes as \" because this is a JSON string value
+
+---
+
+## Field: exampleSpec
+
+A small, REAL, fully-inline spec object (NOT a string) that your renderScript can draw immediately, with no
+database and no external data. It powers a one-click "Demo this plugin" button and acts as a smoke test.
+
+Rules:
+- It is a JSON object, not a string — do not escape its quotes.
+- `"type"` must equal the plugin's `type`.
+- Keep it tiny — a handful of data points is enough to show the chart working.
+- Put the actual data INLINE (e.g. `labels`/`datasets`, `data`, `nodes`/`links`, `rows`, `events`).
+- It must render WITHOUT a database. If your chart is normally driven by a `"sql"` query, do NOT put `sql`
+  here — provide the equivalent inline-data form instead.
+- Every field your renderScript reads off `spec` to draw the chart should be present and populated.
+
+Example (for the bar plugin shown below):
+
+  "exampleSpec": { "type":"bar", "title":"Quarterly Revenue by Region", "xLabel":"Quarter", "yLabel":"Revenue ($k)", "labels":["Q1","Q2","Q3","Q4"], "datasets":[{"label":"North","data":[120,150,170,140]},{"label":"South","data":[90,110,130,160]}] }
 
 ---
 
@@ -55,6 +76,7 @@ A self-contained JavaScript function, written as a compact JSON string. Always t
 {
   "type": "bar",
   "promptDescription": "- **bar** — comparisons, rankings, grouped side-by-side metrics. Spec: { \"type\":\"bar\", \"title\":\"...\", \"xLabel\":\"...\", \"yLabel\":\"...\", \"labels\":[\"A\",\"B\",\"C\"], \"datasets\":[{\"label\":\"Series 1\",\"data\":[10,20,30]}] }",
+  "exampleSpec": { "type": "bar", "title": "Quarterly Revenue by Region", "xLabel": "Quarter", "yLabel": "Revenue ($k)", "labels": ["Q1", "Q2", "Q3", "Q4"], "datasets": [{"label": "North", "data": [120, 150, 170, 140]}, {"label": "South", "data": [90, 110, 130, 160]}] },
   "renderScript": "function(wrap,spec){if(!wrap.style.height)wrap.style.height='400px';function load(url,g,cb){if(window[g]){cb();return;}var s=document.createElement('script');s.src=url;s.onload=cb;document.head.appendChild(s);}load('https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js','Chart',function(){var canvas=document.createElement('canvas');wrap.appendChild(canvas);new Chart(canvas,{type:spec.type||'bar',data:{labels:spec.labels||[],datasets:(spec.datasets||[]).map(function(d,i){var colors=['#534AB7','#2E9CDB','#4BC1A8','#E8833A'];return{label:d.label||'',data:d.data||[],backgroundColor:colors[i%colors.length]+'BB',borderColor:colors[i%colors.length],borderWidth:1.5};})},options:{responsive:true,maintainAspectRatio:true,plugins:{title:{display:!!spec.title,text:spec.title||''}},scales:{x:{title:{display:!!spec.xLabel,text:spec.xLabel||''}},y:{title:{display:!!spec.yLabel,text:spec.yLabel||''},beginAtZero:true}}}});});}"
 }
 
@@ -66,165 +88,21 @@ Convert the visualization source below into a plugin JSON following all rules ab
 
 Step-by-step:
 1. Choose a `type` name that is lowercase and hyphen-separated (e.g. `chord`, `arc-diagram`)
-2. Decide what data fields a caller must provide — define those as the spec
-3. Find the library's CDN URL on jsdelivr.net or unpkg.com (if the source uses a local build)
-4. Write a `renderScript` that loads the library and renders using `wrap` and `spec`
+2. Identify what data fields a caller must provide — those become the spec
+3. Find the library's CDN URL on jsdelivr.net or unpkg.com (if the source uses a local or npm build)
+4. Write a `renderScript` that loads the library from CDN and renders using `wrap` and `spec`
 5. Write a `promptDescription` in the exact format shown above
+6. Write an `exampleSpec` — a small inline spec your renderScript can draw with no external data (see rules above)
 
-Output ONLY the JSON object. No markdown code fences, no explanation, nothing before or after the JSON.
-If the source is too large to fit in renderScript, focus on the core rendering logic.
-
----
-
-## Visualization source
-
-#!/usr/bin/env python3
-"""
-Generate a copy-paste prompt for any AI chatbot (ChatGPT, Claude, Gemini, etc.)
-to convert visualization source code into a chart plugin JSON.
-
-No API key required — just paste the output into any AI chat window.
-
-Usage:
-    python scripts/make_prompt.py my_chart.js          # from a file
-    python scripts/make_prompt.py my_chart.html        # works with any text format
-    python scripts/make_prompt.py                      # paste/type source interactively
-
-The prompt is printed to stdout and also saved to scripts/_last_prompt.txt for easy copying.
-"""
-
-import sys
-from pathlib import Path
-
-# A clean, readable example plugin so the LLM understands the pattern.
-# Based on bar.json but formatted for readability inside a prompt.
-EXAMPLE_PLUGIN = r"""{
-  "type": "bar",
-  "promptDescription": "- **bar** — comparisons, rankings, grouped side-by-side metrics. Spec: { \"type\":\"bar\", \"title\":\"...\", \"xLabel\":\"...\", \"yLabel\":\"...\", \"labels\":[\"A\",\"B\",\"C\"], \"datasets\":[{\"label\":\"Series 1\",\"data\":[10,20,30]}] }",
-  "renderScript": "function(wrap,spec){if(!wrap.style.height)wrap.style.height='400px';function load(url,g,cb){if(window[g]){cb();return;}var s=document.createElement('script');s.src=url;s.onload=cb;document.head.appendChild(s);}load('https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js','Chart',function(){var canvas=document.createElement('canvas');wrap.appendChild(canvas);new Chart(canvas,{type:spec.type||'bar',data:{labels:spec.labels||[],datasets:(spec.datasets||[]).map(function(d,i){var colors=['#534AB7','#2E9CDB','#4BC1A8','#E8833A'];return{label:d.label||'',data:d.data||[],backgroundColor:colors[i%colors.length]+'BB',borderColor:colors[i%colors.length],borderWidth:1.5};})},options:{responsive:true,maintainAspectRatio:true,plugins:{title:{display:!!spec.title,text:spec.title||''}},scales:{x:{title:{display:!!spec.xLabel,text:spec.xLabel||''}},y:{title:{display:!!spec.yLabel,text:spec.yLabel||''},beginAtZero:true}}}});});}"
-}"""
-
-PROMPT_TEMPLATE = """\
-You are helping create a chart plugin for an open-source data visualization system called LLM Data Explorer.
-
-## What you must produce
-
-A single JSON object with exactly three string fields:
-
-  "type"              — unique lowercase identifier, hyphens allowed (e.g. "chord", "force-directed")
-  "promptDescription" — see format below
-  "renderScript"      — see format below
+Output the JSON object inside a single ```json fenced code block, with nothing before or after it.
+The fenced code block is REQUIRED: it makes the chat UI preserve the JSON verbatim. Without a fence the
+JSON is rendered as Markdown, which silently destroys the content — `\"` escapes collapse to `"`,
+`**bold**` loses its asterisks, every `*` (multiplication) is eaten as emphasis, and `[i]`/`[x][y]`
+indices are mangled as link syntax. After pasting, remove the ``` fences before saving the file.
+If the source spans multiple files, synthesize them into one self-contained renderScript.
 
 ---
 
-## Field: promptDescription
+## Visualization source (pasted source)
 
-A single-line markdown snippet that tells an AI assistant when to use this chart and what data it needs.
-Use this EXACT format (everything on one line, no newlines):
-
-  - **<type>** — <one sentence: when to use this chart>. Spec: {{ "type":"<type>", "field1":"...", "field2":[] }}
-
-Rules:
-- Start with `- **<type>** —`
-- The sentence should say WHEN this chart is useful (not what it looks like)
-- Include every required data field in the Spec example, with realistic placeholder values
-- Escape all inner double-quotes as \\" because this is a JSON string value
-
----
-
-## Field: renderScript
-
-A self-contained JavaScript function, written as a compact JSON string. Always this signature:
-
-  function(wrap, spec) {{ ... }}
-
-- `wrap` is a DOM <div> element — render the chart inside it
-- `spec` is a plain JS object with the data fields from your promptDescription Spec
-- Load any required library from a public CDN using this exact helper (copy it verbatim):
-
-  function load(url, globalName, callback) {{
-    if (window[globalName]) {{ callback(); return; }}
-    var s = document.createElement('script');
-    s.src = url;
-    s.onload = callback;
-    document.head.appendChild(s);
-  }}
-
-- Set a default height only if not already set: `if (!wrap.style.height) wrap.style.height = '400px';`
-- Do NOT assume any globals beyond `window` and `document`
-- Keep it compact: no comments, minimal whitespace, use semicolons
-- The entire value must be a valid JSON string — no literal newlines inside it
-
----
-
-## Complete working example
-
-{example}
-
----
-
-## Your task
-
-Convert the visualization source below into a plugin JSON following all rules above.
-
-Step-by-step:
-1. Choose a `type` name that is lowercase and hyphen-separated (e.g. `chord`, `arc-diagram`)
-2. Decide what data fields a caller must provide — define those as the spec
-3. Find the library's CDN URL on jsdelivr.net or unpkg.com (if the source uses a local build)
-4. Write a `renderScript` that loads the library and renders using `wrap` and `spec`
-5. Write a `promptDescription` in the exact format shown above
-
-Output ONLY the JSON object. No markdown code fences, no explanation, nothing before or after the JSON.
-If the source is too large to fit in renderScript, focus on the core rendering logic.
-
----
-
-## Visualization source
-
-{source}
-"""
-
-
-def main():
-    if len(sys.argv) >= 2:
-        source_path = Path(sys.argv[1])
-        if not source_path.exists():
-            print(f"Error: file not found: {source_path}", file=sys.stderr)
-            sys.exit(1)
-        source = source_path.read_text(encoding="utf-8")
-        print(f"Loaded source from: {source_path.name} ({len(source)} chars)", file=sys.stderr)
-    else:
-        print("No file provided — paste or type your visualization source below.", file=sys.stderr)
-        print("Press Ctrl+D (macOS/Linux) or Ctrl+Z then Enter (Windows) when done.\n", file=sys.stderr)
-        try:
-            source = sys.stdin.read().strip()
-        except (EOFError, KeyboardInterrupt):
-            source = ""
-
-    if not source.strip():
-        print("Error: no source provided.", file=sys.stderr)
-        sys.exit(1)
-
-    prompt = PROMPT_TEMPLATE.format(example=EXAMPLE_PLUGIN, source=source)
-
-    # Save to file for easy access
-    out_path = Path(__file__).parent / "_last_prompt.txt"
-    out_path.write_text(prompt, encoding="utf-8")
-
-    # Print prompt to stdout
-    print(prompt)
-
-    print("\n" + "=" * 60, file=sys.stderr)
-    print(f"Prompt saved to: {out_path}", file=sys.stderr)
-    print("", file=sys.stderr)
-    print("Next steps:", file=sys.stderr)
-    print("  1. Copy the prompt above (or open scripts/_last_prompt.txt)", file=sys.stderr)
-    print("  2. Paste it into ChatGPT, Claude, or any AI chatbot", file=sys.stderr)
-    print("  3. Save the JSON response as:  chart_plugins/<type>.json", file=sys.stderr)
-    print("     (strip any ``` fences if the AI wrapped its output)", file=sys.stderr)
-    print("  4. Validate:  python mcp_server/validate_plugin.py chart_plugins/<type>.json", file=sys.stderr)
-
-
-if __name__ == "__main__":
-    main()
-
+function draw(el,data){/* tiny chart */}

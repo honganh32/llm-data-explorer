@@ -59,6 +59,7 @@ MAX_TOTAL_SIZE = 80_000   # stop fetching once we have this much source
 EXAMPLE_PLUGIN = r"""{
   "type": "bar",
   "promptDescription": "- **bar** — comparisons, rankings, grouped side-by-side metrics. Spec: { \"type\":\"bar\", \"title\":\"...\", \"xLabel\":\"...\", \"yLabel\":\"...\", \"labels\":[\"A\",\"B\",\"C\"], \"datasets\":[{\"label\":\"Series 1\",\"data\":[10,20,30]}] }",
+  "exampleSpec": { "type": "bar", "title": "Quarterly Revenue by Region", "xLabel": "Quarter", "yLabel": "Revenue ($k)", "labels": ["Q1", "Q2", "Q3", "Q4"], "datasets": [{"label": "North", "data": [120, 150, 170, 140]}, {"label": "South", "data": [90, 110, 130, 160]}] },
   "renderScript": "function(wrap,spec){if(!wrap.style.height)wrap.style.height='400px';function load(url,g,cb){if(window[g]){cb();return;}var s=document.createElement('script');s.src=url;s.onload=cb;document.head.appendChild(s);}load('https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js','Chart',function(){var canvas=document.createElement('canvas');wrap.appendChild(canvas);new Chart(canvas,{type:spec.type||'bar',data:{labels:spec.labels||[],datasets:(spec.datasets||[]).map(function(d,i){var colors=['#534AB7','#2E9CDB','#4BC1A8','#E8833A'];return{label:d.label||'',data:d.data||[],backgroundColor:colors[i%colors.length]+'BB',borderColor:colors[i%colors.length],borderWidth:1.5};})},options:{responsive:true,maintainAspectRatio:true,plugins:{title:{display:!!spec.title,text:spec.title||''}},scales:{x:{title:{display:!!spec.xLabel,text:spec.xLabel||''}},y:{title:{display:!!spec.yLabel,text:spec.yLabel||''},beginAtZero:true}}}});});}"
 }"""
 
@@ -72,11 +73,12 @@ You are helping create a chart plugin for an open-source data visualization syst
 
 ## What you must produce
 
-A single JSON object with exactly three string fields:
+A single JSON object with these fields:
 
-  "type"              — unique lowercase identifier, hyphens allowed (e.g. "chord", "force-directed")
-  "promptDescription" — see format below
-  "renderScript"      — see format below
+  "type"              — (string) unique lowercase identifier, hyphens allowed (e.g. "chord", "force-directed")
+  "promptDescription" — (string) see format below
+  "exampleSpec"       — (object) a small, ready-to-render demo spec; see format below
+  "renderScript"      — (string) see format below
 
 ---
 
@@ -92,6 +94,26 @@ Rules:
 - The sentence should say WHEN this chart is useful (not what it looks like)
 - Include every required data field in the Spec example, with realistic placeholder values
 - Escape all inner double-quotes as \\" because this is a JSON string value
+
+---
+
+## Field: exampleSpec
+
+A small, REAL, fully-inline spec object (NOT a string) that your renderScript can draw immediately, with no
+database and no external data. It powers a one-click "Demo this plugin" button and acts as a smoke test.
+
+Rules:
+- It is a JSON object, not a string — do not escape its quotes.
+- `"type"` must equal the plugin's `type`.
+- Keep it tiny — a handful of data points is enough to show the chart working.
+- Put the actual data INLINE (e.g. `labels`/`datasets`, `data`, `nodes`/`links`, `rows`, `events`).
+- It must render WITHOUT a database. If your chart is normally driven by a `"sql"` query, do NOT put `sql`
+  here — provide the equivalent inline-data form instead.
+- Every field your renderScript reads off `spec` to draw the chart should be present and populated.
+
+Example (for the bar plugin shown below):
+
+  "exampleSpec": {{ "type":"bar", "title":"Quarterly Revenue by Region", "xLabel":"Quarter", "yLabel":"Revenue ($k)", "labels":["Q1","Q2","Q3","Q4"], "datasets":[{{"label":"North","data":[120,150,170,140]}},{{"label":"South","data":[90,110,130,160]}}] }}
 
 ---
 
@@ -136,6 +158,7 @@ Step-by-step:
 3. Find the library's CDN URL on jsdelivr.net or unpkg.com (if the source uses a local or npm build)
 4. Write a `renderScript` that loads the library from CDN and renders using `wrap` and `spec`
 5. Write a `promptDescription` in the exact format shown above
+6. Write an `exampleSpec` — a small inline spec your renderScript can draw with no external data (see rules above)
 
 Output the JSON object inside a single ```json fenced code block, with nothing before or after it.
 The fenced code block is REQUIRED: it makes the chat UI preserve the JSON verbatim. Without a fence the

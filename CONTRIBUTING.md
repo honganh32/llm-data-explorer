@@ -29,7 +29,7 @@ When given a GitHub repo URL the script automatically filters out `node_modules`
 
 **Step 2 — Paste into a chatbot:**
 
-Copy the prompt into ChatGPT, Claude, Gemini, or any AI chat. The AI will return a complete plugin JSON.
+Copy the prompt into ChatGPT, Claude, Gemini, or any AI chat. The AI will return a complete plugin JSON — including an `exampleSpec` (a small inline demo spec) so you can render it instantly to sanity-check it (see [Test locally](#step-4-test-locally)).
 
 **Step 3 — Save and strip fences:**
 
@@ -122,6 +122,18 @@ load('https://cdn.jsdelivr.net/npm/YOUR-LIB/dist/lib.min.js', 'LibGlobalName', f
 
 This pattern is safe to call multiple times — it reuses already-loaded scripts.
 
+### `exampleSpec` (object, optional but recommended)
+A small, **real, fully-inline** spec that renders out of the box — the "Demo this plugin" button in `playground.html` loads and renders it in one click, and it doubles as a smoke test for your `renderScript`.
+
+```json
+"exampleSpec": { "type": "chord", "title": "Demo", "labels": ["A","B","C"], "matrix": [[0,10,5],[10,0,8],[5,8,0]] }
+```
+
+Guidelines:
+- `type` must equal the plugin's `type`.
+- Keep it tiny — a handful of data points is enough to show the chart working.
+- It must be **renderable without a database**. If your plugin normally takes a `"sql"` spec, ship the equivalent **inline-data** form here instead (e.g. `nodes`/`links`, `rows`, `events`, `data`), since the playground has no SQL backend.
+
 ---
 
 ## Step 3: Validate your plugin
@@ -141,7 +153,7 @@ Fix any errors reported before proceeding.
 
 Double-click **`playground.html`** to open it in your browser, then load your `chart_plugins/<type>.json` in step 1. Everything below runs in the page — your data never leaves your machine, and there are no network calls.
 
-**Just want to see the plugin render?** Open the **Advanced · work with a spec directly** box, click **"Fill example from plugin"** (auto-loads the `Spec:` example from your `promptDescription`), and click **▶ Render spec**.
+**Just want to see the plugin render?** Open the **Advanced · work with a spec directly** box and click **"Demo this plugin"** — it loads your `exampleSpec` (or, if you didn't ship one, scrapes the `Spec:` example from your `promptDescription`) and renders it immediately. Shipping an `exampleSpec` makes this a reliable one-click demo and smoke test.
 
 **Want to test it on your own raw data?** The playground converts raw data into a spec without ever sending your data to an LLM:
 
@@ -191,11 +203,12 @@ In the PR description, include:
 {
   "type": "string — unique lowercase identifier",
   "promptDescription": "string — markdown snippet for LLM system prompts",
-  "renderScript": "string — JS function(wrap, spec) { ... }"
+  "renderScript": "string — JS function(wrap, spec) { ... }",
+  "exampleSpec": "object (optional) — a small inline spec the playground can render in one click"
 }
 ```
 
-All three fields are required. No other fields are used by the server.
+`type`, `promptDescription`, and `renderScript` are required. `exampleSpec` is optional but recommended — it powers the playground's "Demo this plugin" button and serves as a smoke test. The server uses only the three required fields.
 
 ---
 

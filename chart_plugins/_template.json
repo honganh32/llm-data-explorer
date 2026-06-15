@@ -1,5 +1,6 @@
 {
   "type": "YOUR_CHART_TYPE",
   "promptDescription": "- **YOUR_CHART_TYPE** — one sentence describing when to use it. Spec: { \"type\":\"YOUR_CHART_TYPE\", \"title\":\"...\", \"requiredField1\":\"...\", \"requiredField2\":[] }",
+  "exampleSpec": { "type": "YOUR_CHART_TYPE", "title": "Demo", "requiredField1": "example", "requiredField2": [1, 2, 3] },
   "renderScript": "function(wrap, spec) {\n  // Set a default height only if the parent hasn't set one\n  if (!wrap.style.height) wrap.style.height = '400px';\n\n  // Helper to load a CDN script once\n  function load(url, globalName, callback) {\n    if (window[globalName]) { callback(); return; }\n    var s = document.createElement('script');\n    s.src = url;\n    s.onload = callback;\n    document.head.appendChild(s);\n  }\n\n  // Load your charting library, then render\n  load(\n    'https://cdn.jsdelivr.net/npm/YOUR-LIBRARY@VERSION/dist/lib.min.js',\n    'YourLibraryGlobal',\n    function() {\n      // TODO: replace this block with your rendering code\n      // spec.title, spec.requiredField1, spec.requiredField2, etc.\n      var el = document.createElement('div');\n      el.textContent = 'Replace this with your chart — spec.title: ' + (spec.title || '(none)');\n      wrap.appendChild(el);\n    }\n  );\n}"
 }
