@@ -4086,6 +4086,7 @@ function mergeRowsIntoSpec(spec, rows) {
   if (type === 'timearcs' || type === 'timearcs-gl') {
     s.events = rows.map(r => ({
       year:     pick(r, 'year', 'Year', 'yr', 'time_bucket', 'bucket', 'period'),
+      time:     pick(r, 'time', 'Time', 'ts', 'timestamp', 'Timestamp', 'datetime', 'date', 'Date', 'event_time', 'occurred_at'),
       source:   pick(r, 'source', 'Source', 'src', 'source_ip'),
       target:   pick(r, 'target', 'Target', 'destination', 'Destination', 'dst', 'dest'),
       category: pick(r, 'category', 'Category', 'event_type', 'type', 'Type', 'attack_type', 'attack', 'label', 'event_class', 'class') || '',
@@ -4307,7 +4308,8 @@ function mergeRowsIntoSpec(spec, rows) {
         target: idxOf.get(String(tgtOf(r))),
         value:  +(pick(r, 'value', 'Value', 'count', 'Count', 'cnt', 'weight') ?? 1),
       }))
-      .filter(l => l.source != null && l.target != null && l.source !== l.target);
+      // Keep self-loops (source === target): the renderScript shows them on the matrix diagonal.
+      .filter(l => l.source != null && l.target != null);
   }
   return s;
 }
