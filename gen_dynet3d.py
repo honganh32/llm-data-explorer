@@ -1,6 +1,6 @@
 import json, os
 
-os.chdir(r'e:\multi-agent\llm-data-explorer')
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 with open('data-explorer.html', 'r', encoding='utf-8') as f:
     content = f.read()

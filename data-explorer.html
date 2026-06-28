@@ -155,11 +155,10 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.131.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.131.0/examples/js/controls/OrbitControls.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
-<script src="schema_contexts/schema_context_adventureworks.js"></script>
-<script src="schema_contexts/schema_context_network_monitoring.js"></script>
-<script src="schema_contexts/schema_context_hpcdata.js"></script>
-<script src="schema_contexts/schema_context_network90mins.js"></script>
-<script src="schema_contexts/schema_context_vast1data.js"></script>
+<!-- Schema contexts (schema_contexts/*.js) are fetched on demand when their database
+     is selected — see ensureSchemaContext(). This keeps the page from requesting schema
+     files for databases you don't have (no 404s) and lets the public build ship with only
+     the schema contexts that are committed. -->
 </head>
 <body>
 
@@ -207,6 +206,39 @@ const messages = [];
 let isLoading = false;
 let currentDatabase = 'AdventureWorks2019';
 
+// ── Schema contexts, loaded on demand ───────────────────────────────────────
+// Each file declares `const <NAME>_SCHEMA_CONTEXT = `…``. We fetch the matching
+// file only when its database is selected, so the browser never requests schema
+// files for databases that aren't present (no console 404s). Unknown databases
+// (your own) simply have no entry here and fall back to schema discovery.
+const SCHEMA_CONTEXT_FILES = {
+  'AdventureWorks2019': 'schema_context_adventureworks.js',
+  'NetworkMonitoring':  'schema_context_network_monitoring.js',
+  'HPCData':            'schema_context_hpcdata.js',
+  'Network90MinsData':  'schema_context_network90mins.js',
+  'VAST1Data':          'schema_context_vast1data.js',
+  'VAST1':              'schema_context_vast1data.js',
+};
+const schemaContextCache = {};   // DB name -> schema text, or null if unavailable
+
+async function ensureSchemaContext(db) {
+  if (db in schemaContextCache) return schemaContextCache[db];
+  const file = SCHEMA_CONTEXT_FILES[db];
+  if (!file) { schemaContextCache[db] = null; return null; }
+  try {
+    const res = await fetch('schema_contexts/' + file);
+    if (!res.ok) { schemaContextCache[db] = null; return null; }
+    const code = await res.text();
+    const m = code.match(/const\s+([A-Za-z0-9_]+SCHEMA_CONTEXT)\s*=/);
+    // Run the file in a private scope and return its declared constant.
+    const text = m ? Function(code + '\nreturn ' + m[1] + ';')() : null;
+    schemaContextCache[db] = (typeof text === 'string') ? text : null;
+  } catch (_) {
+    schemaContextCache[db] = null;
+  }
+  return schemaContextCache[db];
+}
+
 function getDbInitials(db) {
   return db.split(/[^a-zA-Z0-9]/).filter(Boolean).map(w => w[0].toUpperCase()).slice(0, 2).join('') || 'DB';
 }
@@ -239,6 +271,7 @@ async function loadDatabases() {
 function onDatabaseChange(db) {
   if (!db || db === currentDatabase) return;
   currentDatabase = db;
+  ensureSchemaContext(db);   // warm the schema cache (fire-and-forget)
   updateHeaderForDb(db);
   newChat();
 }
@@ -3994,17 +4027,10 @@ function getSystemPromptText() {
   const isN90 = currentDatabase === 'Network90MinsData';
   const isVAST1 = currentDatabase === 'VAST1Data' || currentDatabase === 'VAST1';
 
-  const schemaSection = isAW
-    ? ADVENTUREWORKS_SCHEMA_CONTEXT
-    : isNM
-    ? NETWORK_MONITORING_SCHEMA_CONTEXT
-    : isHPC
-    ? HPCDATA_SCHEMA_CONTEXT
-    : isN90
-    ? NETWORK90MINS_SCHEMA_CONTEXT
-    : isVAST1
-    ? VAST1DATA_SCHEMA_CONTEXT
-    : `You are connected to the "${currentDatabase}" PostgreSQL database.
+  // ensureSchemaContext() is awaited before this runs (see sendMessage), so the
+  // cache holds the schema text for known databases; unknown DBs fall back below.
+  const schemaSection = schemaContextCache[currentDatabase]
+    || `You are connected to the "${currentDatabase}" PostgreSQL database.
 You do not have pre-loaded schema knowledge for this database.
 Before answering any analytical question, first run a schema discovery query so you understand what tables and columns are available:
 
@@ -4474,6 +4500,7 @@ function closeChartModal() {
   renderHistoryList();
   loadDatabases();
   loadChartPlugins();
+  ensureSchemaContext(currentDatabase);   // preload the default DB's schema
 })();
 
 if (window.location.protocol === 'file:') {
@@ -4758,6 +4785,7 @@ async function sendMessage() {
   const typingDiv = appendMessage('ai', '<div class="typing"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>');
 
   try {
+    await ensureSchemaContext(currentDatabase);   // populate schema cache before building the prompt
     const res = await fetch(API_PROXY_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
