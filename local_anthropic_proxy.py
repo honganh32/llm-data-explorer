@@ -11,6 +11,30 @@ try:
 except ImportError:
     PSYCOPG2_AVAILABLE = False
 
+
+def load_dotenv():
+    """Populate os.environ from a .env file next to this script (KEY=VALUE per line).
+
+    Real environment variables take precedence — a value already set in the
+    environment is never overwritten. No external dependency required.
+    """
+    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    if not os.path.isfile(env_path):
+        return
+    with open(env_path, "r", encoding="utf-8") as f:
+        for raw_line in f:
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = value
+
+
+load_dotenv()
+
 HOST = "127.0.0.1"
 PORT = 8787
 TARGET_URL = "https://api.anthropic.com/v1/messages"
