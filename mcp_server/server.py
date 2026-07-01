@@ -71,7 +71,9 @@ def suggest_chart(data_description: str) -> list[dict]:
         # flow / process
         (["flow", "sankey", "funnel", "process", "stage", "conversion", "drop"], ["sankey", "funnel", "waterfall"]),
         # distribution / stats
-        (["distribution", "outlier", "quartile", "box", "whisker", "spread", "variance", "violin"], ["box", "violin"]),
+        (["distribution", "outlier", "quartile", "box", "whisker", "spread", "variance", "violin"], ["box", "violin", "beeswarm"]),
+        # beeswarm / individual points
+        (["beeswarm", "swarm", "jitter", "strip plot", "dot plot", "individual point", "every value", "each observation"], ["beeswarm", "box", "violin", "scatter"]),
         # financial / candlestick
         (["candle", "ohlc", "open high low close", "stock", "price", "financial"], ["candlestick", "rangearea", "rangebar"]),
         # range / band
