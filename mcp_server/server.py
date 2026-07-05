@@ -65,13 +65,17 @@ def suggest_chart(data_description: str) -> list[dict]:
         # time-evolving network
         (["evolv", "over time", "dynamic", "temporal", "timeline", "change", "3d", "snapshot"], ["dynet3d", "graph", "timearcs"]),
         # time arcs
-        (["arc", "chord", "circular network", "timearc"], ["timearcs", "timearcs-gl", "graph"]),
+        (["arc", "circular network", "timearc"], ["timearcs", "timearcs-gl", "graph"]),
+        # chord / circular flow matrix
+        (["chord", "chord diagram", "circular flow", "flow matrix", "ribbon", "migration", "migration matrix", "who goes to whom", "who moves to", "circular relationship", "transition matrix", "bidirectional flow", "back and forth", "interchange"], ["chord", "sankey", "graph"]),
         # hierarchy / tree
         (["hierarch", "tree", "parent", "child", "drill", "nested", "part of"], ["treemap", "sunburst", "sankey"]),
         # flow / process
         (["flow", "sankey", "funnel", "process", "stage", "conversion", "drop"], ["sankey", "funnel", "waterfall"]),
         # distribution / stats
-        (["distribution", "outlier", "quartile", "box", "whisker", "spread", "variance", "violin"], ["box", "violin"]),
+        (["distribution", "outlier", "quartile", "box", "whisker", "spread", "variance", "violin"], ["box", "violin", "beeswarm"]),
+        # beeswarm / individual points
+        (["beeswarm", "swarm", "jitter", "strip plot", "dot plot", "individual point", "every value", "each observation"], ["beeswarm", "box", "violin", "scatter"]),
         # financial / candlestick
         (["candle", "ohlc", "open high low close", "stock", "price", "financial"], ["candlestick", "rangearea", "rangebar"]),
         # range / band
