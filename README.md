@@ -4,11 +4,18 @@ An [MCP (Model Context Protocol)](https://modelcontextprotocol.io) server that g
 
 ## Live MCP endpoint
 
+The server runs on the **Cloudflare Workers free plan** (always-on, no cold-start
+sleep). After deploying your own (see [Deploy your own](#deploy-your-own)), your
+endpoint is:
+
 ```
-https://llm-data-explorer-production.up.railway.app/sse
+https://llm-chart-mcp.honganh32.workers.dev/mcp
 ```
 
-> **Deploy your own:** See [Railway deployment](#deploy-your-own) below.
+> Uses the current **Streamable HTTP** transport at `/mcp`. (The retired Railway
+> deployment used the deprecated SSE transport at `/sse`.)
+>
+> **Deploy your own:** See [Deploy your own](#deploy-your-own) below.
 
 ---
 
@@ -22,7 +29,8 @@ Edit `%APPDATA%\Claude\claude_desktop_config.json` (Windows) or `~/Library/Appli
 {
   "mcpServers": {
     "chart-plugins": {
-      "url": "https://llm-data-explorer-production.up.railway.app/sse"
+      "type": "streamable-http",
+      "url": "https://llm-chart-mcp.honganh32.workers.dev/mcp"
     }
   }
 }
@@ -33,12 +41,12 @@ Restart Claude Desktop. The tools appear automatically.
 ### Claude Code (CLI)
 
 ```bash
-claude mcp add chart-plugins --transport sse https://YOUR-APP.up.railway.app/sse
+claude mcp add chart-plugins --transport http https://llm-chart-mcp.honganh32.workers.dev/mcp
 ```
 
 ### Cursor / other MCP clients
 
-Add the SSE URL `https://YOUR-APP.up.railway.app/sse` in your client's MCP server settings.
+Add the Streamable HTTP URL `https://llm-chart-mcp.honganh32.workers.dev/mcp` in your client's MCP server settings.
 
 ### Local development
 
@@ -104,18 +112,27 @@ The function loads its own CDN scripts on first call and renders immediately. Mu
 
 ## Deploy your own
 
-### Railway (recommended)
+### Cloudflare Workers (recommended — free, always-on)
 
-1. Fork this repo.
-2. Go to [railway.app](https://railway.app) → **New Project** → **Deploy from GitHub repo**.
-3. Select your fork. Railway detects `railway.toml` automatically.
-4. Click **Deploy**. Your endpoint is at `https://YOUR-APP.up.railway.app/sse`.
+A TypeScript port of the server lives in [`cloudflare_worker/`](cloudflare_worker/).
+It runs on the Workers free plan with no credit card and no cold-start sleep.
 
-### Render
+```bash
+cd cloudflare_worker
+npm install
+npx wrangler login
+npm run deploy
+```
+
+Your endpoint is the printed URL + `/mcp`. Full guide: [cloudflare_worker/README.md](cloudflare_worker/README.md).
+
+### Render (Python server, free tier)
 
 1. Create a **Web Service** pointing to this repo.
 2. Build command: `pip install -r mcp_server/requirements.txt`
 3. Start command: `python mcp_server/server.py`
+
+> Note: Render's free web services sleep after 15 minutes of inactivity and cold-start on the next request.
 
 ---
 

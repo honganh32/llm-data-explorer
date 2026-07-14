@@ -48,7 +48,28 @@ Or for a deployed URL:
 }
 ```
 
+## Deploying on Cloudflare Workers (free, always-on — recommended)
+
+A TypeScript port of this server lives in [`cloudflare_worker/`](cloudflare_worker/).
+It runs on the Workers free plan (no credit card, no cold-start sleep) and serves
+the **Streamable HTTP** transport at `/mcp` (the current MCP standard; the SSE
+transport below is deprecated).
+
+```bash
+cd cloudflare_worker
+npm install
+npx wrangler login
+npm run deploy
+```
+
+Your endpoint is the printed URL + `/mcp`, e.g.
+`https://llm-chart-mcp.honganh32.workers.dev/mcp`.
+See [cloudflare_worker/README.md](cloudflare_worker/README.md) for details.
+
 ## Deploying on Railway (free tier)
+
+> Railway's free trial is time-limited; prefer Cloudflare Workers above for a
+> genuinely cost-free, always-on deployment.
 
 1. Push this repo to GitHub.
 2. Create a new Railway project → **Deploy from GitHub repo**.
