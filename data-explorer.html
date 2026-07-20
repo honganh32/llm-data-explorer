@@ -1159,6 +1159,7 @@ function buildIPOctetGroups(allNodes, links, COLORS) {
 // ── Dispatcher: attribute first, then Louvain; or force a specific method ─────
 function buildHierarchicalGroups(allNodes, links, COLORS, forcedMethod) {
   const empty = { levels: [], gInfo: new Map(), l1Colors: new Map(), groupingMethod: 'none', groupingFields: null };
+  if (forcedMethod === 'none')      return empty;
   if (forcedMethod === 'attribute') return buildAttributeGroups(allNodes, links, COLORS) || empty;
   if (forcedMethod === 'louvain')   return buildLouvainGroups(allNodes, links, COLORS)   || empty;
   if (forcedMethod === 'kcore')     return buildKCoreGroups(allNodes, links, COLORS)     || empty;
@@ -1183,7 +1184,7 @@ function renderGraph(wrap, spec) {
   const links = rawLinks.filter(l => validIds.has(l.source) && validIds.has(l.target));
 
   // ── Hierarchical grouping (mutable — can be swapped by the method toggle) ───
-  let activeGroupMethod = 'auto';
+  let activeGroupMethod = 'none';
   let { levels, gInfo, l1Colors, groupingMethod, groupingFields } =
     buildHierarchicalGroups(allNodes, links, CHART_COLORS, activeGroupMethod);
   let idToL1Gid = levels[0] || new Map();
@@ -1301,7 +1302,8 @@ function renderGraph(wrap, spec) {
   // Grouping method toggle
   const grpMethodSec = mkPanelSection('Grouping');
   [
-    { id: 'auto',      label: 'Auto (default)', desc: 'Best method for your data'             },
+    { id: 'none',      label: 'None (default)',  desc: 'No grouping — show every node individually' },
+    { id: 'auto',      label: 'Auto',            desc: 'Best method for your data'             },
     { id: 'attribute', label: 'Attribute',       desc: 'Groups by shared node attributes'     },
     { id: 'louvain',   label: 'Louvain',         desc: 'Nodes with dense internal connections'},
     { id: 'kcore',     label: 'k-Core shells',   desc: 'Layers from periphery to core'        },
